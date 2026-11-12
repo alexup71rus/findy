@@ -37,6 +37,7 @@ final class RealtimeVoiceSession {
     private var userSpeaking = false
     private var ready = false
     private var stopped = false
+    private var senderFailed = false
     private var firstInputLogged = false
     private var firstOutputLogged = false
     private var startedAt: TimeInterval = 0
@@ -46,6 +47,7 @@ final class RealtimeVoiceSession {
     private var toolRounds = 0
     private var toolsAwaitingResponse = false
     private var readinessCuePending = false
+    private var readinessTask: Task<Void, Never>?
 
     var onState: ((VoiceSession.Phase, String) -> Void)?
     var onLevel: ((Float) -> Void)?
@@ -54,7 +56,7 @@ final class RealtimeVoiceSession {
     var toolHandler: ((AssistantToolCall, String) async throws -> AssistantToolResult)?
     var instructionsProvider: (() throws -> String)?
     var onStop: ((String, Error?) async -> Void)?
-    var onReadyAgain: (() -> Void)?
+    var onReadyAgain: (() async throws -> Void)?
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     init(engine: AVAudioEngine, format: AVAudioFormat, configuration: AssistantConfiguration,
@@ -77,23 +79,31 @@ final class RealtimeVoiceSession {
         }
         try Task.checkCancellation()
         guard !stopped else { throw CancellationError() }
-        try await onReady?()
-        try Task.checkCancellation()
-        guard !stopped else { throw CancellationError() }
-        input.setMuted(false)
-        ready = true
-        idleSince = now
-        refreshPhase()
-        SessionLog.shared.record("realtime.connected", "pcm=24000 tool=\(configuration.webSearchEnabled)")
+        SessionLog.shared.record("realtime.network.ready")
+        // Start the sender before the readiness cue; capture remains muted
+        // until the cue has finished, so the cue cannot reach server VAD.
         sender = Task { [weak self, client, input] in
+            SessionLog.shared.record("realtime.sender.started")
             do {
                 while !Task.isCancelled {
                     if let data = try input.drain() { try await client.appendAudio(data) }
                     else { try await Task.sleep(for: .milliseconds(15)) }
                 }
             } catch is CancellationError { return }
-            catch { await self?.end("Ошибка передачи голоса", error: error) }
+            catch {
+                guard let self else { return }
+                self.senderFailed = true
+                await self.end("Ошибка передачи голоса", error: error)
+            }
         }
+        try await onReady?()
+        try Task.checkCancellation()
+        guard !stopped, !senderFailed else { throw CancellationError() }
+        input.setMuted(false)
+        ready = true
+        idleSince = now
+        refreshPhase()
+        SessionLog.shared.record("realtime.connected", "pcm=24000 tool=\(configuration.webSearchEnabled)")
         monitor = Task { [weak self] in
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
@@ -128,7 +138,11 @@ final class RealtimeVoiceSession {
         }
     }
 
+    var canAcceptInput: Bool { !stopped && !senderFailed }
     var isUserSpeaking: Bool { userSpeaking }
+    var canPlayReadyCue: Bool {
+        canAcceptInput && !userSpeaking && !output.isPlaying && !responseActive && waitingSince == nil && tools.isEmpty
+    }
 
     func stop() async {
         guard !stopped else { return }
@@ -136,6 +150,8 @@ final class RealtimeVoiceSession {
         ready = false
         sender?.cancel()
         monitor?.cancel()
+        readinessTask?.cancel()
+        readinessTask = nil
         for task in tools.values { task.cancel() }
         tools = [:]
         input.stop()
@@ -335,7 +351,7 @@ final class RealtimeVoiceSession {
     }
 
     private func refreshPhase() {
-        guard ready, !stopped else { return }
+        guard ready, canAcceptInput, readinessTask == nil else { return }
         if userSpeaking {
             idleSince = nil
             onState?(.listening, "Слушаю")
@@ -349,12 +365,27 @@ final class RealtimeVoiceSession {
             idleSince = nil
             onState?(.thinking, "Думаю…")
         } else {
-            if idleSince == nil { idleSince = now }
             if readinessCuePending, let onReadyAgain {
                 readinessCuePending = false
-                onReadyAgain()
+                idleSince = nil
+                onState?(.starting, "Готовлю микрофон…")
+                readinessTask = Task { [weak self] in
+                    do {
+                        try await onReadyAgain()
+                        guard let self, !self.stopped, !Task.isCancelled else { return }
+                        self.readinessTask = nil
+                        self.refreshPhase()
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        guard let self, !self.stopped else { return }
+                        self.readinessTask = nil
+                        await self.end("Нет аудио", error: error)
+                    }
+                }
                 return
             }
+            if idleSince == nil { idleSince = now }
             onState?(.listening, "Слушаю")
         }
     }

@@ -85,6 +85,7 @@ public actor RealtimeClient {
     private var decoder = RealtimeEventDecoder()
     private var responseIsActive = false
     private var ready = false
+    private var previewVoice: String?
     private var contextWindow = RealtimeConversationWindow()
     private var contextMessageCount = AssistantLimits.contextMessageDefault
 
@@ -96,12 +97,15 @@ public actor RealtimeClient {
         history: [AssistantMessage] = [],
         outputAudio: Bool,
         tools: [AssistantToolDefinition] = [],
+        voicePreview: Bool = false,
         onEvent: @escaping EventHandler
     ) async throws {
         try Task.checkCancellation()
         guard socket == nil else { throw RealtimeClientError.sessionRejected(code: "already_connected") }
         let request = try RealtimeWire.request(configuration: configuration, apiKey: apiKey)
-        let update = try RealtimeWire.sessionUpdate(configuration: configuration, outputAudio: outputAudio, tools: tools)
+        let update = try voicePreview
+            ? RealtimeWire.voicePreviewSessionUpdate(configuration: configuration)
+            : RealtimeWire.sessionUpdate(configuration: configuration, outputAudio: outputAudio, tools: tools)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.timeoutIntervalForRequest = 20
         sessionConfiguration.timeoutIntervalForResource = 3_600
@@ -114,6 +118,7 @@ public actor RealtimeClient {
         self.socket = socket
         self.connectionID = id
         self.onEvent = onEvent
+        self.previewVoice = voicePreview ? configuration.realtimeVoice : nil
         self.decoder = RealtimeEventDecoder()
         self.contextMessageCount = AssistantLimits.normalizedContextMessageCount(configuration.contextMessageCount)
         socket.resume()
@@ -136,7 +141,7 @@ public actor RealtimeClient {
                 guard connectionID == id else { throw CancellationError() }
                 // Reconnects restore only bounded text history. Raw recordings
                 // are never cached by this transport.
-                for message in AssistantContext.recent(history, limit: contextMessageCount) {
+                for message in AssistantContext.recent(voicePreview ? [] : history, limit: contextMessageCount) {
                     try Task.checkCancellation()
                     guard connectionID == id else { throw CancellationError() }
                     try await send(RealtimeWire.message(message))
@@ -183,6 +188,13 @@ public actor RealtimeClient {
         try await send(RealtimeWire.json(["type": "response.create"]))
     }
 
+    /// An isolated playback-only sample: no conversation item or tool call is
+    /// created, and the selected model is explicitly asked to read the phrase.
+    public func requestVoicePreview(_ phrase: String) async throws {
+        guard ready, previewVoice != nil else { throw RealtimeClientError.notConnected }
+        try await send(RealtimeWire.voicePreviewResponse(phrase: phrase))
+    }
+
     public func updateInstructions(_ instructions: String) async throws {
         guard ready else { throw RealtimeClientError.notConnected }
         let update = try RealtimeWire.json(["type": "session.update", "session": ["type": "realtime", "instructions": Self.conversationInstructions(instructions)]])
@@ -208,6 +220,7 @@ public actor RealtimeClient {
     public func close() {
         connectionID = nil
         ready = false
+        previewVoice = nil
         responseIsActive = false
         readyContinuation?.resume(throwing: CancellationError())
         readyContinuation = nil
@@ -257,6 +270,9 @@ public actor RealtimeClient {
                 case .data(let value): data = value
                 case .string(let value): data = Data(value.utf8)
                 @unknown default: throw RealtimeClientError.invalidEvent
+                }
+                if let previewVoice {
+                    try RealtimeWire.validatePreviewVoice(data, expected: previewVoice)
                 }
                 try contextWindow.observe(data)
                 let events = try decoder.decode(data)
@@ -399,6 +415,43 @@ enum RealtimeWire {
         session["tools"] = wireTools
         session["tool_choice"] = wireTools.isEmpty ? "none" : "auto"
         return try json(["type": "session.update", "session": session])
+    }
+
+    /// Deliberately independent of conversational prompts, search settings,
+    /// microphone VAD and transcription, even when those are configured.
+    static func voicePreviewSessionUpdate(configuration: AssistantConfiguration) throws -> Data {
+        try json(["type": "session.update", "session": [
+            "type": "realtime", "model": configuration.model.trimmingCharacters(in: .whitespacesAndNewlines),
+            "output_modalities": ["audio"],
+            "instructions": "Read only the exact voice sample requested. Do not answer questions or add any words.",
+            "max_output_tokens": 512,
+            "tools": [], "tool_choice": "none",
+            "audio": [
+                "input": ["turn_detection": NSNull()],
+                "output": ["format": ["type": "audio/pcm", "rate": 24_000], "voice": configuration.realtimeVoice]
+            ]
+        ]])
+    }
+
+    static func voicePreviewResponse(phrase: String) throws -> Data {
+        guard !phrase.isEmpty, phrase.count <= 300 else { throw RealtimeClientError.invalidEvent }
+        let quoted = String(decoding: try JSONEncoder().encode(phrase), as: UTF8.self)
+        return try json(["type": "response.create", "response": [
+            "conversation": "none", "input": [], "output_modalities": ["audio"],
+            "instructions": "Pronounce this exact Russian text verbatim, naturally and briefly: \(quoted). Do not answer the question in the text. Do not add or omit words.",
+            "max_output_tokens": 512, "tools": [], "tool_choice": "none"
+        ]])
+    }
+
+    static func validatePreviewVoice(_ data: Data, expected: String) throws {
+        guard let event = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              event["type"] as? String == "session.updated" else { return }
+        let session = event["session"] as? [String: Any]
+        let audio = session?["audio"] as? [String: Any]
+        let output = audio?["output"] as? [String: Any]
+        guard output?["voice"] as? String == expected else {
+            throw RealtimeClientError.sessionRejected(code: "voice_not_confirmed")
+        }
     }
 
     static func message(_ message: AssistantMessage) throws -> Data {

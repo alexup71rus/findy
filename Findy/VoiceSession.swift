@@ -164,6 +164,7 @@ final class VoiceSession: NSObject, ObservableObject {
         let userMessage = AssistantMessage(role: .user, text: text)
         let replyID = UUID()
         textRequestID = identifier
+        VoicePreviewPlayer.shared.stop()
         isSendingText = true
         lastError = nil
         textResponseTask = Task { [weak self] in
@@ -430,19 +431,16 @@ final class VoiceSession: NSObject, ObservableObject {
                     self.updateActivity(status)
                 }
             }
-            realtime.onReadyAgain = { [weak self] in
-                guard let self, self.sessionID == identifier, self.isRunning else { return }
-                self.phase = .starting
-                self.status = "Готовлю микрофон…"
-                self.updateActivity(self.status)
-                Task { [weak self] in
-                    guard let self else { return }
-                    await self.playCue(.ready, session: identifier)
-                    guard self.sessionID == identifier, self.isRunning, self.phase == .starting else { return }
-                    self.phase = .listening
-                    self.status = "Слушаю"
-                    self.updateActivity(self.status)
+            realtime.onReadyAgain = { [weak self, weak realtime] in
+                guard let self, let realtime, self.sessionID == identifier, self.isRunning else { throw CancellationError() }
+                try await self.ensureAudioCapture(engine, format: format, session: identifier) {
+                    let snapshot = realtime.input.snapshot()
+                    return (snapshot.buffers, snapshot.lastBufferAt)
                 }
+                try self.checkCurrent(identifier)
+                guard realtime.canPlayReadyCue else { return }
+                try await self.playReadyCue(session: identifier, allowSuperseded: true)
+                try self.checkCurrent(identifier)
             }
             realtime.onLevel = { [weak self] decibels in
                 guard let self, self.sessionID == identifier, self.isRunning else { return }
@@ -506,9 +504,8 @@ final class VoiceSession: NSObject, ObservableObject {
             try await realtimeVoice.connect { [weak self] in
                 guard let self else { throw CancellationError() }
                 try await self.ensureAudioCapture(engine, format: format, session: identifier, snapshot: captureSnapshot)
-                await self.playCue(.ready, session: identifier)
+                try await self.playReadyCue(session: identifier)
                 try self.checkCurrent(identifier)
-                try await self.ensureAudioCapture(engine, format: format, session: identifier, snapshot: captureSnapshot)
             }
             try checkCurrent(identifier)
             hasBeenReady = true
@@ -519,14 +516,11 @@ final class VoiceSession: NSObject, ObservableObject {
                 let snapshot = bridge.snapshot()
                 return (snapshot.buffers, snapshot.lastBufferTime)
             }
-            await playCue(.ready, session: identifier)
+            beginListening(deferActivation: true)
+            try await playReadyCue(session: identifier)
             try checkCurrent(identifier)
-            try await ensureAudioCapture(engine, format: format, session: identifier) {
-                let snapshot = bridge.snapshot()
-                return (snapshot.buffers, snapshot.lastBufferTime)
-            }
             hasBeenReady = true
-            beginListening()
+            activateListening()
             startTimer(for: identifier)
             log.record("session.listening", "id=\(identifier) sampleRate=\(format.sampleRate) onDevice=true")
         }
@@ -562,9 +556,21 @@ final class VoiceSession: NSObject, ObservableObject {
         throw ChatFailure(message: "Микрофон не отдаёт аудиобуферы. Повторите запуск разговора.")
     }
 
-    private func playCue(_ kind: VoiceEarcons.Kind, session: UUID) async {
-        guard !Task.isCancelled, soundCuesEnabled, sessionID == session, isRunning, let earcons else { return }
-        if realtimeVoice?.isUserSpeaking == true { return }
+    private func playReadyCue(session: UUID, allowSuperseded: Bool = false) async throws {
+        let played = await playCue(.ready, session: session)
+        try checkCurrent(session)
+        if !played, allowSuperseded, let realtimeVoice, realtimeVoice.canAcceptInput, !realtimeVoice.canPlayReadyCue {
+            // A new turn superseded the cue; refreshPhase will publish that turn.
+            return
+        }
+        guard played else { throw ChatFailure(message: "Не удалось воспроизвести сигнал готовности.") }
+    }
+
+    @discardableResult
+    private func playCue(_ kind: VoiceEarcons.Kind, session: UUID) async -> Bool {
+        guard !Task.isCancelled, sessionID == session, isRunning else { return false }
+        guard soundCuesEnabled, let earcons else { return true }
+        if realtimeVoice?.isUserSpeaking == true { return true }
         let token = UUID()
         cueID = token
         switch kind {
@@ -573,19 +579,33 @@ final class VoiceSession: NSObject, ObservableObject {
         case .end: log.record("audio.cue.end")
         }
         realtimeVoice?.input.setMuted(true)
-        await withTaskCancellationHandler {
-            await earcons.play(kind)
+        let played = await withTaskCancellationHandler {
+            await earcons.play(kind, onPlayedBack: { [weak self] in
+                guard kind == .ready, let self, self.cueID == token,
+                      self.sessionID == session, self.isRunning,
+                      self.realtimeVoice?.canAcceptInput != false else { return }
+                // Open both gates in the playback completion callback, before
+                // resuming the awaiting task; no post-cue quiet interval.
+                self.realtimeVoice?.input.setMuted(false)
+                self.bridge?.resumeRecognition()
+                self.log.record("audio.cue.ready.completed")
+            })
         } onCancel: { [weak self, weak earcons] in
             Task { @MainActor in
                 guard self?.cueID == token else { return }
                 earcons?.stop()
             }
         }
-        // Allow the speaker's acoustic tail to clear before forwarding input.
-        await Task.detached { try? await Task.sleep(for: .milliseconds(60)) }.value
-        guard cueID == token, sessionID == session, isRunning else { return }
+        guard played, !Task.isCancelled, cueID == token, sessionID == session, isRunning,
+              realtimeVoice?.canAcceptInput != false else { return false }
+        if kind != .ready {
+            // Keep the established search/end acoustic-tail protection.
+            await Task.detached { try? await Task.sleep(for: .milliseconds(60)) }.value
+            guard !Task.isCancelled, cueID == token, sessionID == session, isRunning else { return false }
+            realtimeVoice?.input.setMuted(false)
+        }
         cueID = nil
-        realtimeVoice?.input.setMuted(false)
+        return true
     }
 
     private func checkCurrent(_ identifier: UUID) throws {
@@ -606,7 +626,7 @@ final class VoiceSession: NSObject, ObservableObject {
         log.record(event, "\(details) input=\(inputTypes) output=\(outputTypes) category=\(session.category.rawValue) sampleRate=\(session.sampleRate)")
     }
 
-    private func beginListening(resetSilenceClock: Bool = true) {
+    private func beginListening(resetSilenceClock: Bool = true, deferActivation: Bool = false) {
         guard isRunning, let recognizer else { return }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true
@@ -617,16 +637,21 @@ final class VoiceSession: NSObject, ObservableObject {
         let turn = UUID()
         turnID = turn
         pendingTranscript = ""
-        phase = .listening
-        status = "Слушаю"
-        listeningStartedAt = now
-        if resetSilenceClock { clock.resumedListening(at: now) }
-        bridge?.listen(using: request)
+        bridge?.listen(using: request, initiallyPaused: deferActivation)
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             let text = result?.bestTranscription.formattedString
             let final = result?.isFinal == true
             Task { @MainActor [weak self] in
-                guard let self, self.isRunning, self.turnID == turn, self.phase == .listening else { return }
+                guard let self, self.isRunning, self.turnID == turn, self.request === request else { return }
+                guard self.phase == .listening else {
+                    // A recognition task can fail before the ready cue finishes.
+                    // Do not announce readiness for a failed, gated request.
+                    if let error {
+                        self.log.record("speech.failed", SessionLog.describe(error))
+                        await self.fail(error, reason: "Ошибка распознавания")
+                    }
+                    return
+                }
                 if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     if text != self.pendingTranscript {
                         self.pendingTranscript = text
@@ -648,8 +673,18 @@ final class VoiceSession: NSObject, ObservableObject {
                 }
             }
         }
-        updateActivity("Слушаю")
+        if !deferActivation { activateListening(resetSilenceClock: resetSilenceClock) }
         log.record("speech.turn.started", "turn=\(turn) requiresOnDeviceRecognition=true")
+    }
+
+    private func activateListening(resetSilenceClock: Bool = true) {
+        guard isRunning, request != nil else { return }
+        bridge?.resumeRecognition()
+        phase = .listening
+        status = "Слушаю"
+        listeningStartedAt = now
+        if resetSilenceClock { clock.resumedListening(at: now) }
+        updateActivity(status)
     }
 
     private func startTimer(for identifier: UUID) {
@@ -926,7 +961,7 @@ final class VoiceSession: NSObject, ObservableObject {
             // A timer or Live Activity monitor can be stopping its own task.
             // This unstructured task is independent of that cancellation.
             let cue = Task { @MainActor in await earcons.play(.end, timeout: .milliseconds(350)) }
-            await cue.value
+            _ = await cue.value
         }
         earcons?.stop()
         earcons = nil
@@ -1045,9 +1080,20 @@ extension VoiceSession: AVSpeechSynthesizerDelegate {
             // Ignore the output tail, then create a fresh recognition request.
             try? await Task.sleep(for: .milliseconds(200))
             guard self.isRunning, self.sessionID == session, self.phase == .speaking else { return }
-            if let session { await self.playCue(.ready, session: session) }
-            guard self.isRunning, self.sessionID == session, self.phase == .speaking else { return }
-            self.beginListening()
+            guard let session, let engine = self.engine, let bridge = self.bridge else { return }
+            do {
+                let format = engine.inputNode.outputFormat(forBus: 0)
+                try await self.ensureAudioCapture(engine, format: format, session: session) {
+                    let snapshot = bridge.snapshot()
+                    return (snapshot.buffers, snapshot.lastBufferTime)
+                }
+                guard self.isRunning, self.sessionID == session, self.phase == .speaking else { return }
+                self.beginListening(deferActivation: true)
+                try await self.playReadyCue(session: session)
+                guard self.isRunning, self.sessionID == session, self.phase == .speaking else { return }
+                self.activateListening()
+            } catch is CancellationError { return }
+            catch { await self.fail(error, reason: "Нет аудио") }
         }
     }
 

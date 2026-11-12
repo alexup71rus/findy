@@ -9,6 +9,30 @@ final class FindyUITests: XCTestCase {
         return app
     }
 
+    func testProviderVoiceSelectionKeepsPreviewExplicit() {
+        let app = launch(["--seed-ui-provider", "--show-settings", "--show-speech-settings"])
+        let marin = app.buttons["speech.preview.provider:marin"]
+        let cedar = app.buttons["speech.preview.provider:cedar"]
+        XCTAssertTrue(marin.waitForExistence(timeout: 5))
+        XCTAssertTrue(cedar.waitForExistence(timeout: 5))
+        for button in [marin, cedar] {
+            XCTAssertTrue(button.isEnabled && button.isHittable)
+            XCTAssertGreaterThanOrEqual(button.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+        }
+        let choice = app.buttons["Голос модели Cedar"]
+        XCTAssertEqual(choice.value as? String, "Не выбран")
+        choice.tap()
+        XCTAssertEqual(choice.value as? String, "Выбран")
+        XCTAssertEqual(marin.label, "Послушать голос Marin")
+        XCTAssertEqual(cedar.label, "Послушать голос Cedar")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Остановить пример голоса")).firstMatch.exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Provider voices with Cedar selected"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testVoiceComposerLocksInputAndRestoresDraftAfterStopping() {
         let app = launch(["--seed-ui-provider", "--ui-preview-voice"])
         let composer = app.textFields["chat-composer"]

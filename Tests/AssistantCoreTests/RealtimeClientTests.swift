@@ -87,6 +87,69 @@ final class RealtimeClientTests: XCTestCase {
         XCTAssertNil(input["transcription"])
     }
 
+    func testVoicePreviewIsPlaybackOnlyAndIgnoresConversationPromptAndSearch() throws {
+        var configuration = config(search: true)
+        configuration.systemPrompt = "PRIVATE_CONVERSATION_PROMPT"
+        let data = try RealtimeWire.voicePreviewSessionUpdate(configuration: configuration)
+        let root = try object(data)
+        let session = try XCTUnwrap(root["session"] as? [String: Any])
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(configuration.systemPrompt))
+        XCTAssertEqual(session["model"] as? String, configuration.model)
+        XCTAssertEqual(session["output_modalities"] as? [String], ["audio"])
+        XCTAssertEqual((session["tools"] as? [Any])?.count, 0)
+        XCTAssertEqual(session["tool_choice"] as? String, "none")
+        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
+        let input = try XCTUnwrap(audio["input"] as? [String: Any])
+        XCTAssertTrue(input["turn_detection"] is NSNull)
+        XCTAssertNil(input["transcription"])
+        let output = try XCTUnwrap(audio["output"] as? [String: Any])
+        XCTAssertEqual(output["voice"] as? String, "cedar")
+        XCTAssertEqual((output["format"] as? [String: Any])?["rate"] as? Int, 24_000)
+    }
+
+    func testVoicePreviewRequestsOnlyAnExactPhraseOutsideConversation() throws {
+        let phrase = "Привет! Я Cedar. Чем займёмся?"
+        let root = try object(RealtimeWire.voicePreviewResponse(phrase: phrase))
+        XCTAssertEqual(root["type"] as? String, "response.create")
+        let response = try XCTUnwrap(root["response"] as? [String: Any])
+        XCTAssertEqual(response["conversation"] as? String, "none")
+        XCTAssertEqual((response["input"] as? [Any])?.count, 0)
+        XCTAssertEqual(response["output_modalities"] as? [String], ["audio"])
+        XCTAssertEqual(response["tool_choice"] as? String, "none")
+        XCTAssertEqual((response["tools"] as? [Any])?.count, 0)
+        XCTAssertTrue((response["instructions"] as? String)?.contains(phrase) == true)
+        XCTAssertEqual(response["max_output_tokens"] as? Int, 512)
+        XCTAssertThrowsError(try RealtimeWire.voicePreviewResponse(phrase: ""))
+        XCTAssertThrowsError(try RealtimeWire.voicePreviewResponse(phrase: String(repeating: "я", count: 301)))
+    }
+
+    func testVoicePreviewRequiresServerConfirmationOfExactVoice() throws {
+        func confirmation(_ voice: String) throws -> Data {
+            try event(["type": "session.updated", "session": ["audio": ["output": ["voice": voice]]]])
+        }
+        XCTAssertNoThrow(try RealtimeWire.validatePreviewVoice(confirmation("cedar"), expected: "cedar"))
+        XCTAssertThrowsError(try RealtimeWire.validatePreviewVoice(confirmation("alloy"), expected: "cedar")) {
+            XCTAssertEqual($0 as? RealtimeClientError, .sessionRejected(code: "voice_not_confirmed"))
+        }
+        XCTAssertThrowsError(try RealtimeWire.validatePreviewVoice(event(["type": "session.updated"]), expected: "cedar"))
+        XCTAssertNoThrow(try RealtimeWire.validatePreviewVoice(event(["type": "session.created"]), expected: "cedar"))
+    }
+
+    func testCancelledPreviewDoesNotConnectAndClosedClientCannotRequestSample() async throws {
+        let client = RealtimeClient()
+        let configuration = config()
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await client.connect(configuration: configuration, apiKey: "", outputAudio: true, voicePreview: true) { _ in }
+        }
+        do { try await task.value; XCTFail("Cancelled preview connected") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        await client.close()
+        await client.close()
+        do { try await client.requestVoicePreview("Привет! Я Cedar. Чем займёмся?"); XCTFail("Closed preview requested audio") }
+        catch { XCTAssertEqual(error as? RealtimeClientError, .notConnected) }
+    }
+
     func testSearchIsAnExplicitFunctionWithBoundedJSONArguments() throws {
         let root = try object(RealtimeWire.sessionUpdate(configuration: config(search: true), outputAudio: true))
         let session = try XCTUnwrap(root["session"] as? [String: Any])

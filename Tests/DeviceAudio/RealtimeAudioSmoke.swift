@@ -51,11 +51,13 @@ enum RealtimeAudioSmoke {
     private static func checkCueCancellation() async {
         let engine = AVAudioEngine() // never started; no device is opened
         let cues = VoiceEarcons(engine: engine)
-        let playback = Task { await cues.play(.ready) }
+        var opened = false
+        let playback = Task { await cues.play(.ready, onPlayedBack: { opened = true }) }
         while !cues.hasPendingPlayback { await Task.yield() }
         cues.stop()
-        await playback.value
-        print("PASS: stopping a pending cue releases its waiter")
+        let played = await playback.value
+        precondition(!played && !opened)
+        print("PASS: stopping a pending cue releases its waiter without opening its gate")
     }
 
     private static func checkCueWaveforms() throws {

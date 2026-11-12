@@ -10,6 +10,7 @@ struct SpeechSettingsView: View {
     @ObservedObject private var session = VoiceSession.shared
 
     @State private var voiceError = ""
+    @State private var voiceErrorTitle = "Не удалось выбрать голос"
     @State private var showingVoiceError = false
 
     private var usesProviderVoice: Bool { settings.usesProviderVoice }
@@ -26,10 +27,19 @@ struct SpeechSettingsView: View {
         }
         .navigationTitle("Озвучивание")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Не удалось выбрать голос", isPresented: $showingVoiceError) {
+        .alert(voiceErrorTitle, isPresented: $showingVoiceError) {
             Button("Понятно", role: .cancel) {}
         } message: {
             Text(voiceError)
+        }
+        .onChange(of: preview.errorMessage) { _, error in
+            guard let error else { return }
+            voiceErrorTitle = "Не удалось послушать голос"
+            voiceError = error
+            showingVoiceError = true
+        }
+        .onChange(of: showingVoiceError) { _, showing in
+            if !showing { preview.stop() }
         }
         .onAppear {
             if usesProviderVoice { preview.stop() } else { catalog.refresh() }
@@ -40,6 +50,9 @@ struct SpeechSettingsView: View {
         }
         .onChange(of: session.isRunning) { _, running in if running { preview.stop() } }
         .onChange(of: session.isSendingText) { _, sending in if sending { preview.stop() } }
+        .onChange(of: settings.configuration) { _, _ in preview.stop() }
+        .onChange(of: settings.selectedModel) { _, _ in preview.stop() }
+        .onChange(of: settings.speechVoiceIdentifier) { _, _ in preview.stop() }
         .onChange(of: usesProviderVoice) { _, providerVoice in
             preview.stop()
             if !providerVoice { catalog.refresh() }
@@ -176,31 +189,58 @@ struct SpeechSettingsView: View {
 
     private func realtimeVoiceChoice(_ voice: String) -> some View {
         let selected = settings.configuration.realtimeVoice == voice
-        return Button {
-            guard !editingDisabled, var provider = settings.selectedProvider else { return }
-            preview.stop()
-            provider.realtimeVoice = voice
-            do {
-                try settings.upsertProvider(provider, apiKey: nil)
-            } catch {
-                voiceError = error.localizedDescription
-                showingVoiceError = true
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(OpenAIRealtimeVoiceOptions.title(for: voice)).foregroundStyle(.primary)
+        let title = OpenAIRealtimeVoiceOptions.title(for: voice)
+        return HStack(spacing: 12) {
+            Button {
+                guard !editingDisabled, var provider = settings.selectedProvider else { return }
+                preview.stop()
+                provider.realtimeVoice = voice
+                do {
+                    try settings.upsertProvider(provider, apiKey: nil)
+                } catch {
+                    voiceErrorTitle = "Не удалось выбрать голос"
+                    voiceError = error.localizedDescription
+                    showingVoiceError = true
                 }
-                Spacer(minLength: 0)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                        .accessibilityHidden(true)
+                    Text(title).foregroundStyle(.primary)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("Голос модели \(title)")
+            .accessibilityValue(selected ? "Выбран" : "Не выбран")
+            previewButton(identifier: VoicePreviewPlayer.providerIdentifier(voice), title: title) {
+                preview.playProvider(voice: voice)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Голос модели \(OpenAIRealtimeVoiceOptions.title(for: voice))")
-        .accessibilityValue(selected ? "Выбран" : "Не выбран")
+    }
+
+    private func previewButton(identifier: String?, title: String, play: @escaping () -> Void) -> some View {
+        let active = preview.isSpeaking && preview.playingVoiceIdentifier == identifier
+        return Button {
+            if active { preview.stop() } else { play() }
+        } label: {
+            ZStack {
+                if active && preview.isLoading {
+                    ProgressView().controlSize(.small).accessibilityHidden(true)
+                    Image(systemName: "stop.fill").font(.system(size: 7)).accessibilityHidden(true)
+                } else {
+                    Image(systemName: active ? "stop.fill" : "speaker.wave.2")
+                }
+            }
+            .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(active ? "Остановить пример голоса \(title)" : "Послушать голос \(title)")
+        .accessibilityIdentifier("speech.preview." + (identifier ?? "automatic"))
+        .accessibilityValue(active && preview.isLoading ? "Загрузка" : "")
+        .accessibilityHint(active && preview.isLoading ? "Отменяет загрузку примера" : "")
     }
 
     private func voiceChoice(identifier: String?, title: String, subtitle: String) -> some View {
@@ -223,19 +263,9 @@ struct SpeechSettingsView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(title), \(subtitle)")
             .accessibilityValue(settings.speechVoiceIdentifier == identifier ? "Выбран" : "Не выбран")
-            Button {
-                let resolved = catalog.resolve(identifier)?.identifier
-                if preview.isSpeaking && preview.playingVoiceIdentifier == resolved {
-                    preview.stop()
-                } else {
-                    preview.play(voiceIdentifier: identifier, rate: settings.speechRate)
-                }
-            } label: {
-                Image(systemName: "speaker.wave.2")
-                    .frame(minWidth: 44, minHeight: 44)
+            previewButton(identifier: catalog.resolve(identifier)?.identifier, title: title) {
+                preview.play(voiceIdentifier: identifier, rate: settings.speechRate)
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Послушать голос \(title)")
         }
         .disabled(editingDisabled)
     }

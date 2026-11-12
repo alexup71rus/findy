@@ -41,7 +41,8 @@ final class VoiceEarcons {
     enum Kind { case ready, search, end }
     private let player = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1)!
-    private var pending: CheckedContinuation<Void, Never>?
+    private var pending: CheckedContinuation<Bool, Never>?
+    private var onPlayedBack: (() -> Void)?
     private var generation = UUID()
     var hasPendingPlayback: Bool { pending != nil }
 
@@ -50,11 +51,12 @@ final class VoiceEarcons {
         engine.connect(player, to: engine.mainMixerNode, format: format)
     }
 
-    func play(_ kind: Kind, timeout: Duration = .seconds(2)) async {
+    @discardableResult
+    func play(_ kind: Kind, timeout: Duration = .seconds(2), onPlayedBack: (() -> Void)? = nil) async -> Bool {
         stop()
         let frames = 3_600 // 150 ms
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
-              let samples = buffer.floatChannelData?.pointee else { return }
+              let samples = buffer.floatChannelData?.pointee else { return false }
         buffer.frameLength = AVAudioFrameCount(frames)
         for (index, sample) in Self.waveform(kind).enumerated() { samples[index] = sample }
         let token = UUID()
@@ -64,8 +66,9 @@ final class VoiceEarcons {
             guard let self, self.generation == token, self.pending != nil else { return }
             self.stop()
         }
-        await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { continuation in
             pending = continuation
+            self.onPlayedBack = onPlayedBack
             player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 Task { @MainActor [weak self] in self?.finish(token) }
             }
@@ -99,14 +102,17 @@ final class VoiceEarcons {
         player.stop()
         let continuation = pending
         pending = nil
-        continuation?.resume()
+        onPlayedBack = nil
+        continuation?.resume(returning: false)
     }
 
     private func finish(_ token: UUID) {
-        guard generation == token else { return }
-        let continuation = pending
+        guard generation == token, let continuation = pending else { return }
         pending = nil
-        continuation?.resume()
+        let completed = onPlayedBack
+        onPlayedBack = nil
+        completed?()
+        continuation.resume(returning: true)
     }
 }
 
