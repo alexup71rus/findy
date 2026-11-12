@@ -13,7 +13,7 @@ Findy — голосовой AI-помощник, который работае�
 ## Запуск
 
 1. Откройте `Findy.xcodeproj` в Xcode 26 или новее. Требуется iPhone с iOS 18+.
-2. В настройках подписи целей `Findy` и `FindyActivity` выберите свою Team и уникальные Bundle Identifier. Установите приложение на iPhone.
+2. Войдите со своим Apple Account в Xcode. В настройках Signing & Capabilities целей `Findy` и `FindyActivity` включите Automatically manage signing, выберите свою Team и уникальные Bundle Identifier (например, `com.yourname.Findy` и `com.yourname.Findy.Activity`). Подключите iPhone, при необходимости включите на нём Developer Mode, выберите его в Xcode и нажмите Run.
 3. В приложении добавьте подключение: адрес API, тип API, модель и свой ключ, если провайдер его требует. Разрешите необходимые доступы для голоса и напоминаний.
 4. Для своей сборки создайте в приложении «Команды» личную команду с действием Findy → Чат и названием «Давай поболтаем». Разрешите Siri при блокировке и включите Live Activities для Findy.
 
