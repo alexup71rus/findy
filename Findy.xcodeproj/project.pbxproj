@@ -1,0 +1,878 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		01549D00C755456B17CCBE58 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579C447AF244E5428D6F0D9B /* ContentView.swift */; };
+		06CCCC50CB06825EEB1A8061 /* RealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05C99DABFA269261530E033 /* RealtimeClient.swift */; };
+		0A2F88EC10683061730ABA7D /* AssistantConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1484B6B43073E84D26896EB /* AssistantConfiguration.swift */; };
+		0FA38DF2197AB4A6EFE4EE9A /* ReminderScheduleRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 662C9D4F122FDF99ED481487 /* ReminderScheduleRules.swift */; };
+		15CA9B1FDBDDFAFAC06D6B71 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85AE4BFDBC0E5551019C34B3 /* ReminderScheduler.swift */; };
+		165CC3B03E4CFBFC1CD9473B /* DebugRealtimeProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 359251AD076D326C1F8F5492 /* DebugRealtimeProbe.swift */; };
+		1774BB1A573A1EC78DD8B36B /* APIKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F24F57ABA99953B0AFE0330 /* APIKeyStore.swift */; };
+		18FFDB8BC0D404F7746D585D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4552194C1F3F92F1D6160BB /* Assets.xcassets */; };
+		1AA6AF72A63D3FA9C9173FF4 /* SiriHelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA818B3D5F0248CAB92C0CB /* SiriHelpView.swift */; };
+		1AE7FC617472F8FE508C2110 /* LocalDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 157524C167C8470D3B660578 /* LocalDataModels.swift */; };
+		1D6CB6BD57A31958845099CC /* AssistantClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBDED155B90B57E1DE48CB5 /* AssistantClient.swift */; };
+		2301DA52665F20440C4F8B4E /* RealtimeVoiceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B22278059EC977DDD768DA1 /* RealtimeVoiceSession.swift */; };
+		24755D45C71604104998F746 /* FindyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34DA0BFC6651CD77146EEA6F /* FindyUITests.swift */; };
+		24D3C7E35026928DF0584F3A /* FindyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A8B9AB82BEFEAEEB599183 /* FindyApp.swift */; };
+		25F72CC2A8978275B6D049D1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED764057BC9FF7BFB1220CC /* SettingsView.swift */; };
+		262D200195516F27D3DCA97C /* FindyActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19CEE2DE9A2D4517B1B66A63 /* FindyActivity.swift */; };
+		26F282CA44EF33CE788F051E /* FindyLimitsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05BCB222B1EEEFF2C8C11FFF /* FindyLimitsUITests.swift */; };
+		3F4F5974D16D42D9075BB4F5 /* PersonalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB3760F9BD2F3C2144841D9 /* PersonalData.swift */; };
+		4030D529C6CE32C0890B48C4 /* SpeechSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B1C4D42F7C11E7CC552954 /* SpeechSettingsView.swift */; };
+		554208CAEC9B3ABD3C655B9D /* AssistantMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5728F3DD2F2606D8EAF0B740 /* AssistantMessage.swift */; };
+		575D90934E9832889B7F7715 /* SpeechVoices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C5B37123610201A0D9B3342 /* SpeechVoices.swift */; };
+		59139FDBBB0CF313BB48F9C5 /* FindyOnboardingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B61D3C2A61D9F4BC17ABBEF /* FindyOnboardingUITests.swift */; };
+		5A9FFE879E646AE12C79AED8 /* StartChatIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C28DD23D822ACC3EE81CBEB /* StartChatIntent.swift */; };
+		5CF093252093434871988FE5 /* DebugConnectionImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8298B6B6803BEF5EB2766739 /* DebugConnectionImport.swift */; };
+		6048AAE93A1DAC77AF35FECF /* FindyGraphics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3471119AB1FDBC8340A8450E /* FindyGraphics.swift */; };
+		65592C095A9275FCD51619D5 /* RealtimeAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72B24E930E5F49954591395 /* RealtimeAudio.swift */; };
+		65886BA9A21B87C0C959969C /* ProviderEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B80C607EF3856171CD25CFA8 /* ProviderEditorView.swift */; };
+		671FEE71B65C60F172251A6F /* ConversationRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76CC2FF4CF917383E62A44A3 /* ConversationRules.swift */; };
+		6A11992159D95551A6C422B1 /* ChatTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BC7FD884FE5F8E718AE464A /* ChatTimeline.swift */; };
+		73BFD7EFB9AB9E100110F304 /* AssistantSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC8566B2143B9A8F4EC8D359 /* AssistantSettings.swift */; };
+		91553D2624375F0EE6B70C89 /* RemindersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CDFE07E28F8C6FBFBF3846E /* RemindersView.swift */; };
+		921E467AB82BE3EA8865F46B /* FindyApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2132E108EEDDE85BCF42BBB5 /* FindyApplicationDelegate.swift */; };
+		997DE613ACE455C3AE217705 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B09D8C0DE7FE420CDD8EE5B8 /* PrivacyInfo.xcprivacy */; };
+		A1A06560590A32059E55286F /* VoiceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4C177A0D996E122D32BDE1 /* VoiceSession.swift */; };
+		A453DC66C40BB10C72DBE446 /* AssistantTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472BE7936E73D48A8F03144F /* AssistantTools.swift */; };
+		AB0A8AE9D759AFF242D19B77 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83BD95F4B9667A1AD3A2793F /* Foundation.framework */; };
+		ACCA344C2087EAAF440F769C /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F6D6AB14C0C13E74650A77B /* DiagnosticsView.swift */; };
+		AE0BA0BA888EA3EB6951C5FE /* RealtimeTextReply.swift in Sources */ = {isa = PBXBuildFile; fileRef = F51AF7B59306727DAA7B9AF3 /* RealtimeTextReply.swift */; };
+		B14074E3967686752560AD6C /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FDDEA9132158EDDC7AC33EE /* MemoryView.swift */; };
+		BBAAF2E06096ABB7F05D993B /* LocalDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73D8BA012DDE1CEAA13156AF /* LocalDataStore.swift */; };
+		BC2CF020644F6F73588F1811 /* AssistantContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0153F244907305049F3CCA9 /* AssistantContext.swift */; };
+		BC57FA311AF8758D742618C8 /* AssistantToolExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C7BC5FDE009E05B6016CCB /* AssistantToolExecutor.swift */; };
+		BF3A1D15CA8734DE864C59B1 /* ChatActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADEE729BF4F8F255B886D2E /* ChatActivityAttributes.swift */; };
+		C333DEABC03655DC73AA898D /* SessionLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 139B08AC3F09586F3131FEE9 /* SessionLog.swift */; };
+		C6B5FC7CDD500518FDA3FA39 /* DebugUIFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC73D64EAD052C4C0EE1B5D6 /* DebugUIFixtures.swift */; };
+		CDC5EEED27FF87E296514131 /* AssistantLimits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6847E13D93DA4BAD7BD1D93A /* AssistantLimits.swift */; };
+		D58A9B92EB7933D1FE8FEB8E /* SystemPromptEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F6D75B3E090F85AF5EA3B4 /* SystemPromptEditorView.swift */; };
+		D66A36E47421A07B8ADF0CF8 /* PersonalIntentTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF99684C0BB6D7FBD5BDD7E /* PersonalIntentTracker.swift */; };
+		D9EA04191419BBD5C25B947B /* AssistantFunctionCalling.swift in Sources */ = {isa = PBXBuildFile; fileRef = B30AE81579FCAFAE244818F0 /* AssistantFunctionCalling.swift */; };
+		E03E28D3CE255FB8487DE20D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 517A52B7D8C13F2E9E61E1C4 /* Foundation.framework */; };
+		E29AB721F73D99A800F1EDBE /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83BD95F4B9667A1AD3A2793F /* Foundation.framework */; };
+		E4A355C12DD4DFE129D8C331 /* FindyActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D3DA9FBF5C5B33354A0FBC72 /* FindyActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EBDE3025A897EA6CCABB9C8F /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 882502F4ABA7C700374FF635 /* OnboardingView.swift */; };
+		EC3A00D7B3AAE32BD801554E /* AssistantStreaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 591CFF5D4FAE81778B52E280 /* AssistantStreaming.swift */; };
+		F8233C44672808A925F0F545 /* ChatActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADEE729BF4F8F255B886D2E /* ChatActivityAttributes.swift */; };
+		F8544D3E8C15AAC9EED61560 /* AudioInputBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B60660186916A2F6C44F3A /* AudioInputBridge.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0042EA5C0BC7F5C2E1346983 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E1852E7D63B57172816E1A6B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CE2A127C32556DA8C0ECC9AE;
+			remoteInfo = Findy;
+		};
+		218D3060FAB28709BD34D963 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E1852E7D63B57172816E1A6B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A6D8E0110C2063CA30A8AB8;
+			remoteInfo = FindyActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		51314545F4A566DB0AEC865B /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				E4A355C12DD4DFE129D8C331 /* FindyActivity.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		05BCB222B1EEEFF2C8C11FFF /* FindyLimitsUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FindyLimitsUITests.swift; sourceTree = "<group>"; };
+		0B22278059EC977DDD768DA1 /* RealtimeVoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeVoiceSession.swift; sourceTree = "<group>"; };
+		0FDDEA9132158EDDC7AC33EE /* MemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryView.swift; sourceTree = "<group>"; };
+		10F6D75B3E090F85AF5EA3B4 /* SystemPromptEditorView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SystemPromptEditorView.swift; sourceTree = "<group>"; };
+		139B08AC3F09586F3131FEE9 /* SessionLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionLog.swift; sourceTree = "<group>"; };
+		157524C167C8470D3B660578 /* LocalDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataModels.swift; sourceTree = "<group>"; };
+		19CEE2DE9A2D4517B1B66A63 /* FindyActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FindyActivity.swift; sourceTree = "<group>"; };
+		1C5B37123610201A0D9B3342 /* SpeechVoices.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeechVoices.swift; sourceTree = "<group>"; };
+		2132E108EEDDE85BCF42BBB5 /* FindyApplicationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindyApplicationDelegate.swift; sourceTree = "<group>"; };
+		276DD0AAF3AAAF62BAAD23BE /* Findy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Findy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2CDFE07E28F8C6FBFBF3846E /* RemindersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersView.swift; sourceTree = "<group>"; };
+		3471119AB1FDBC8340A8450E /* FindyGraphics.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FindyGraphics.swift; sourceTree = "<group>"; };
+		34DA0BFC6651CD77146EEA6F /* FindyUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FindyUITests.swift; sourceTree = "<group>"; };
+		355362ADFDA148CE4E443B57 /* FindyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FindyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		359251AD076D326C1F8F5492 /* DebugRealtimeProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugRealtimeProbe.swift; sourceTree = "<group>"; };
+		35B1C4D42F7C11E7CC552954 /* SpeechSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeechSettingsView.swift; sourceTree = "<group>"; };
+		472BE7936E73D48A8F03144F /* AssistantTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTools.swift; sourceTree = "<group>"; };
+		4B4C177A0D996E122D32BDE1 /* VoiceSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceSession.swift; sourceTree = "<group>"; };
+		4ED764057BC9FF7BFB1220CC /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		4EF99684C0BB6D7FBD5BDD7E /* PersonalIntentTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalIntentTracker.swift; sourceTree = "<group>"; };
+		4F6D6AB14C0C13E74650A77B /* DiagnosticsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		517A52B7D8C13F2E9E61E1C4 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		5728F3DD2F2606D8EAF0B740 /* AssistantMessage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantMessage.swift; sourceTree = "<group>"; };
+		579C447AF244E5428D6F0D9B /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		58D954200DC4323EE4BE6B49 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		591CFF5D4FAE81778B52E280 /* AssistantStreaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantStreaming.swift; sourceTree = "<group>"; };
+		5ADEE729BF4F8F255B886D2E /* ChatActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ChatActivityAttributes.swift; sourceTree = "<group>"; };
+		662C9D4F122FDF99ED481487 /* ReminderScheduleRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduleRules.swift; sourceTree = "<group>"; };
+		6847E13D93DA4BAD7BD1D93A /* AssistantLimits.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantLimits.swift; sourceTree = "<group>"; };
+		6B61D3C2A61D9F4BC17ABBEF /* FindyOnboardingUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FindyOnboardingUITests.swift; sourceTree = "<group>"; };
+		6BC7FD884FE5F8E718AE464A /* ChatTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimeline.swift; sourceTree = "<group>"; };
+		6C28DD23D822ACC3EE81CBEB /* StartChatIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StartChatIntent.swift; sourceTree = "<group>"; };
+		6F24F57ABA99953B0AFE0330 /* APIKeyStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APIKeyStore.swift; sourceTree = "<group>"; };
+		73D8BA012DDE1CEAA13156AF /* LocalDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDataStore.swift; sourceTree = "<group>"; };
+		76CC2FF4CF917383E62A44A3 /* ConversationRules.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConversationRules.swift; sourceTree = "<group>"; };
+		8298B6B6803BEF5EB2766739 /* DebugConnectionImport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugConnectionImport.swift; sourceTree = "<group>"; };
+		83BD95F4B9667A1AD3A2793F /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		85AE4BFDBC0E5551019C34B3 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
+		882502F4ABA7C700374FF635 /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		8CA818B3D5F0248CAB92C0CB /* SiriHelpView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SiriHelpView.swift; sourceTree = "<group>"; };
+		90E61314F3C548C00946FB6F /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9FBDED155B90B57E1DE48CB5 /* AssistantClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantClient.swift; sourceTree = "<group>"; };
+		B09D8C0DE7FE420CDD8EE5B8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B1484B6B43073E84D26896EB /* AssistantConfiguration.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantConfiguration.swift; sourceTree = "<group>"; };
+		B30AE81579FCAFAE244818F0 /* AssistantFunctionCalling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantFunctionCalling.swift; sourceTree = "<group>"; };
+		B80C607EF3856171CD25CFA8 /* ProviderEditorView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProviderEditorView.swift; sourceTree = "<group>"; };
+		C0153F244907305049F3CCA9 /* AssistantContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantContext.swift; sourceTree = "<group>"; };
+		C05C99DABFA269261530E033 /* RealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeClient.swift; sourceTree = "<group>"; };
+		C3A8B9AB82BEFEAEEB599183 /* FindyApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FindyApp.swift; sourceTree = "<group>"; };
+		C4552194C1F3F92F1D6160BB /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D1B60660186916A2F6C44F3A /* AudioInputBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioInputBridge.swift; sourceTree = "<group>"; };
+		D3DA9FBF5C5B33354A0FBC72 /* FindyActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FindyActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E72B24E930E5F49954591395 /* RealtimeAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeAudio.swift; sourceTree = "<group>"; };
+		EBB3760F9BD2F3C2144841D9 /* PersonalData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalData.swift; sourceTree = "<group>"; };
+		EC73D64EAD052C4C0EE1B5D6 /* DebugUIFixtures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugUIFixtures.swift; sourceTree = "<group>"; };
+		F2C7BC5FDE009E05B6016CCB /* AssistantToolExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantToolExecutor.swift; sourceTree = "<group>"; };
+		F51AF7B59306727DAA7B9AF3 /* RealtimeTextReply.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeTextReply.swift; sourceTree = "<group>"; };
+		FC8566B2143B9A8F4EC8D359 /* AssistantSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AssistantSettings.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		07B4DDE9D8346BF3C8BBA818 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB0A8AE9D759AFF242D19B77 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		21FD1A0A8B314C18E685EFFE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E03E28D3CE255FB8487DE20D /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A12C4BBF63F73DFB6C59A527 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E29AB721F73D99A800F1EDBE /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		06EF78E36D5BD7873C84FED0 /* LocalData */ = {
+			isa = PBXGroup;
+			children = (
+				73D8BA012DDE1CEAA13156AF /* LocalDataStore.swift */,
+				157524C167C8470D3B660578 /* LocalDataModels.swift */,
+			);
+			name = LocalData;
+			path = LocalData;
+			sourceTree = "<group>";
+		};
+		0C2BE765870E2CCD5C06EA81 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				276DD0AAF3AAAF62BAAD23BE /* Findy.app */,
+				D3DA9FBF5C5B33354A0FBC72 /* FindyActivity.appex */,
+				355362ADFDA148CE4E443B57 /* FindyUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		10A3EA3E083C947F66BB9A01 = {
+			isa = PBXGroup;
+			children = (
+				0C2BE765870E2CCD5C06EA81 /* Products */,
+				C0BA15BC90CAA2BD45D114F4 /* Frameworks */,
+				6082F322D077E6AE6365B755 /* Findy */,
+				A11C805933EBD5DBD96C78F0 /* FindyActivity */,
+				149FABE62701E9D0FD78ECB9 /* Shared */,
+				64E4458B1268ACA5A750404E /* Sources */,
+				2C99D1FDDCA673D317C27943 /* Tests */,
+			);
+			sourceTree = "<group>";
+		};
+		149FABE62701E9D0FD78ECB9 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				5ADEE729BF4F8F255B886D2E /* ChatActivityAttributes.swift */,
+			);
+			name = Shared;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		2C99D1FDDCA673D317C27943 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				E7FDD01FDE6D9DDAFEEA4F01 /* FindyUITests */,
+			);
+			name = Tests;
+			sourceTree = "<group>";
+		};
+		6082F322D077E6AE6365B755 /* Findy */ = {
+			isa = PBXGroup;
+			children = (
+				C3A8B9AB82BEFEAEEB599183 /* FindyApp.swift */,
+				579C447AF244E5428D6F0D9B /* ContentView.swift */,
+				2CDFE07E28F8C6FBFBF3846E /* RemindersView.swift */,
+				85AE4BFDBC0E5551019C34B3 /* ReminderScheduler.swift */,
+				EBB3760F9BD2F3C2144841D9 /* PersonalData.swift */,
+				0FDDEA9132158EDDC7AC33EE /* MemoryView.swift */,
+				2132E108EEDDE85BCF42BBB5 /* FindyApplicationDelegate.swift */,
+				6BC7FD884FE5F8E718AE464A /* ChatTimeline.swift */,
+				F2C7BC5FDE009E05B6016CCB /* AssistantToolExecutor.swift */,
+				359251AD076D326C1F8F5492 /* DebugRealtimeProbe.swift */,
+				0B22278059EC977DDD768DA1 /* RealtimeVoiceSession.swift */,
+				F51AF7B59306727DAA7B9AF3 /* RealtimeTextReply.swift */,
+				E72B24E930E5F49954591395 /* RealtimeAudio.swift */,
+				6C28DD23D822ACC3EE81CBEB /* StartChatIntent.swift */,
+				4B4C177A0D996E122D32BDE1 /* VoiceSession.swift */,
+				139B08AC3F09586F3131FEE9 /* SessionLog.swift */,
+				D1B60660186916A2F6C44F3A /* AudioInputBridge.swift */,
+				90E61314F3C548C00946FB6F /* Info.plist */,
+				4ED764057BC9FF7BFB1220CC /* SettingsView.swift */,
+				B80C607EF3856171CD25CFA8 /* ProviderEditorView.swift */,
+				4F6D6AB14C0C13E74650A77B /* DiagnosticsView.swift */,
+				8CA818B3D5F0248CAB92C0CB /* SiriHelpView.swift */,
+				8298B6B6803BEF5EB2766739 /* DebugConnectionImport.swift */,
+				C4552194C1F3F92F1D6160BB /* Assets.xcassets */,
+				1C5B37123610201A0D9B3342 /* SpeechVoices.swift */,
+				35B1C4D42F7C11E7CC552954 /* SpeechSettingsView.swift */,
+				EC73D64EAD052C4C0EE1B5D6 /* DebugUIFixtures.swift */,
+				B09D8C0DE7FE420CDD8EE5B8 /* PrivacyInfo.xcprivacy */,
+				3471119AB1FDBC8340A8450E /* FindyGraphics.swift */,
+				10F6D75B3E090F85AF5EA3B4 /* SystemPromptEditorView.swift */,
+				882502F4ABA7C700374FF635 /* OnboardingView.swift */,
+			);
+			name = Findy;
+			path = Findy;
+			sourceTree = "<group>";
+		};
+		64E4458B1268ACA5A750404E /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				70BCA6192915E85EF9C570C8 /* ConversationRules */,
+				8D77B8A17CF89903A150612F /* AssistantCore */,
+				936D9B81DBD96B0ECDD99516 /* ProviderSettings */,
+				06EF78E36D5BD7873C84FED0 /* LocalData */,
+			);
+			name = Sources;
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		70BCA6192915E85EF9C570C8 /* ConversationRules */ = {
+			isa = PBXGroup;
+			children = (
+				76CC2FF4CF917383E62A44A3 /* ConversationRules.swift */,
+			);
+			name = ConversationRules;
+			path = ConversationRules;
+			sourceTree = "<group>";
+		};
+		8D77B8A17CF89903A150612F /* AssistantCore */ = {
+			isa = PBXGroup;
+			children = (
+				B1484B6B43073E84D26896EB /* AssistantConfiguration.swift */,
+				5728F3DD2F2606D8EAF0B740 /* AssistantMessage.swift */,
+				9FBDED155B90B57E1DE48CB5 /* AssistantClient.swift */,
+				662C9D4F122FDF99ED481487 /* ReminderScheduleRules.swift */,
+				4EF99684C0BB6D7FBD5BDD7E /* PersonalIntentTracker.swift */,
+				472BE7936E73D48A8F03144F /* AssistantTools.swift */,
+				B30AE81579FCAFAE244818F0 /* AssistantFunctionCalling.swift */,
+				C0153F244907305049F3CCA9 /* AssistantContext.swift */,
+				591CFF5D4FAE81778B52E280 /* AssistantStreaming.swift */,
+				C05C99DABFA269261530E033 /* RealtimeClient.swift */,
+				6847E13D93DA4BAD7BD1D93A /* AssistantLimits.swift */,
+			);
+			name = AssistantCore;
+			path = AssistantCore;
+			sourceTree = "<group>";
+		};
+		936D9B81DBD96B0ECDD99516 /* ProviderSettings */ = {
+			isa = PBXGroup;
+			children = (
+				FC8566B2143B9A8F4EC8D359 /* AssistantSettings.swift */,
+				6F24F57ABA99953B0AFE0330 /* APIKeyStore.swift */,
+			);
+			name = ProviderSettings;
+			path = ProviderSettings;
+			sourceTree = "<group>";
+		};
+		A11C805933EBD5DBD96C78F0 /* FindyActivity */ = {
+			isa = PBXGroup;
+			children = (
+				58D954200DC4323EE4BE6B49 /* Info.plist */,
+				19CEE2DE9A2D4517B1B66A63 /* FindyActivity.swift */,
+			);
+			name = FindyActivity;
+			path = FindyActivity;
+			sourceTree = "<group>";
+		};
+		C0BA15BC90CAA2BD45D114F4 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				F93F115F135CBC74583C39F3 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		E7FDD01FDE6D9DDAFEEA4F01 /* FindyUITests */ = {
+			isa = PBXGroup;
+			children = (
+				34DA0BFC6651CD77146EEA6F /* FindyUITests.swift */,
+				6B61D3C2A61D9F4BC17ABBEF /* FindyOnboardingUITests.swift */,
+				05BCB222B1EEEFF2C8C11FFF /* FindyLimitsUITests.swift */,
+			);
+			name = FindyUITests;
+			path = Tests/FindyUITests;
+			sourceTree = "<group>";
+		};
+		F93F115F135CBC74583C39F3 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				83BD95F4B9667A1AD3A2793F /* Foundation.framework */,
+				517A52B7D8C13F2E9E61E1C4 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		28DDCE0D0C112CBEB20A3729 /* FindyUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 62C2EED98AA75F9E3B60E8DC /* Build configuration list for PBXNativeTarget "FindyUITests" */;
+			buildPhases = (
+				3D08C7F5A7132F9E5CB1DABB /* Sources */,
+				21FD1A0A8B314C18E685EFFE /* Frameworks */,
+				61D57FB6E0CEDA3DFF20A563 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				36AD35DBAF0C0E93B589C349 /* PBXTargetDependency */,
+			);
+			name = FindyUITests;
+			productName = FindyUITests;
+			productReference = 355362ADFDA148CE4E443B57 /* FindyUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		7A6D8E0110C2063CA30A8AB8 /* FindyActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA7E9139456F4AD44EDC41AD /* Build configuration list for PBXNativeTarget "FindyActivity" */;
+			buildPhases = (
+				9125814FABBD105B6A7ADE75 /* Sources */,
+				07B4DDE9D8346BF3C8BBA818 /* Frameworks */,
+				28A0B7D91D57390083F1DD8D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FindyActivity;
+			productName = FindyActivity;
+			productReference = D3DA9FBF5C5B33354A0FBC72 /* FindyActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		CE2A127C32556DA8C0ECC9AE /* Findy */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1CEF2E6110DCA13C84428FB /* Build configuration list for PBXNativeTarget "Findy" */;
+			buildPhases = (
+				41B23A36FC897060CD1BA523 /* Sources */,
+				A12C4BBF63F73DFB6C59A527 /* Frameworks */,
+				2AB7D57CE869B46F2215CC52 /* Resources */,
+				51314545F4A566DB0AEC865B /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4FCA78970AA835D38CB2B173 /* PBXTargetDependency */,
+			);
+			name = Findy;
+			productName = Findy;
+			productReference = 276DD0AAF3AAAF62BAAD23BE /* Findy.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E1852E7D63B57172816E1A6B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 2700;
+			};
+			buildConfigurationList = 40D66CB7F5584CE34BCC2FDF /* Build configuration list for PBXProject "Findy" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = ru;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				ru,
+				en,
+				Base,
+			);
+			mainGroup = 10A3EA3E083C947F66BB9A01;
+			minimizedProjectReferenceProxies = 0;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0C2BE765870E2CCD5C06EA81 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CE2A127C32556DA8C0ECC9AE /* Findy */,
+				7A6D8E0110C2063CA30A8AB8 /* FindyActivity */,
+				28DDCE0D0C112CBEB20A3729 /* FindyUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		28A0B7D91D57390083F1DD8D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2AB7D57CE869B46F2215CC52 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				18FFDB8BC0D404F7746D585D /* Assets.xcassets in Resources */,
+				997DE613ACE455C3AE217705 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		61D57FB6E0CEDA3DFF20A563 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3D08C7F5A7132F9E5CB1DABB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24755D45C71604104998F746 /* FindyUITests.swift in Sources */,
+				59139FDBBB0CF313BB48F9C5 /* FindyOnboardingUITests.swift in Sources */,
+				26F282CA44EF33CE788F051E /* FindyLimitsUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41B23A36FC897060CD1BA523 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24D3C7E35026928DF0584F3A /* FindyApp.swift in Sources */,
+				BBAAF2E06096ABB7F05D993B /* LocalDataStore.swift in Sources */,
+				1AE7FC617472F8FE508C2110 /* LocalDataModels.swift in Sources */,
+				0FA38DF2197AB4A6EFE4EE9A /* ReminderScheduleRules.swift in Sources */,
+				D66A36E47421A07B8ADF0CF8 /* PersonalIntentTracker.swift in Sources */,
+				A453DC66C40BB10C72DBE446 /* AssistantTools.swift in Sources */,
+				D9EA04191419BBD5C25B947B /* AssistantFunctionCalling.swift in Sources */,
+				BC2CF020644F6F73588F1811 /* AssistantContext.swift in Sources */,
+				91553D2624375F0EE6B70C89 /* RemindersView.swift in Sources */,
+				15CA9B1FDBDDFAFAC06D6B71 /* ReminderScheduler.swift in Sources */,
+				3F4F5974D16D42D9075BB4F5 /* PersonalData.swift in Sources */,
+				B14074E3967686752560AD6C /* MemoryView.swift in Sources */,
+				921E467AB82BE3EA8865F46B /* FindyApplicationDelegate.swift in Sources */,
+				6A11992159D95551A6C422B1 /* ChatTimeline.swift in Sources */,
+				BC57FA311AF8758D742618C8 /* AssistantToolExecutor.swift in Sources */,
+				165CC3B03E4CFBFC1CD9473B /* DebugRealtimeProbe.swift in Sources */,
+				EC3A00D7B3AAE32BD801554E /* AssistantStreaming.swift in Sources */,
+				06CCCC50CB06825EEB1A8061 /* RealtimeClient.swift in Sources */,
+				2301DA52665F20440C4F8B4E /* RealtimeVoiceSession.swift in Sources */,
+				AE0BA0BA888EA3EB6951C5FE /* RealtimeTextReply.swift in Sources */,
+				65592C095A9275FCD51619D5 /* RealtimeAudio.swift in Sources */,
+				01549D00C755456B17CCBE58 /* ContentView.swift in Sources */,
+				5A9FFE879E646AE12C79AED8 /* StartChatIntent.swift in Sources */,
+				A1A06560590A32059E55286F /* VoiceSession.swift in Sources */,
+				C333DEABC03655DC73AA898D /* SessionLog.swift in Sources */,
+				F8544D3E8C15AAC9EED61560 /* AudioInputBridge.swift in Sources */,
+				BF3A1D15CA8734DE864C59B1 /* ChatActivityAttributes.swift in Sources */,
+				671FEE71B65C60F172251A6F /* ConversationRules.swift in Sources */,
+				25F72CC2A8978275B6D049D1 /* SettingsView.swift in Sources */,
+				65886BA9A21B87C0C959969C /* ProviderEditorView.swift in Sources */,
+				ACCA344C2087EAAF440F769C /* DiagnosticsView.swift in Sources */,
+				1AA6AF72A63D3FA9C9173FF4 /* SiriHelpView.swift in Sources */,
+				5CF093252093434871988FE5 /* DebugConnectionImport.swift in Sources */,
+				0A2F88EC10683061730ABA7D /* AssistantConfiguration.swift in Sources */,
+				554208CAEC9B3ABD3C655B9D /* AssistantMessage.swift in Sources */,
+				1D6CB6BD57A31958845099CC /* AssistantClient.swift in Sources */,
+				73BFD7EFB9AB9E100110F304 /* AssistantSettings.swift in Sources */,
+				1774BB1A573A1EC78DD8B36B /* APIKeyStore.swift in Sources */,
+				575D90934E9832889B7F7715 /* SpeechVoices.swift in Sources */,
+				4030D529C6CE32C0890B48C4 /* SpeechSettingsView.swift in Sources */,
+				C6B5FC7CDD500518FDA3FA39 /* DebugUIFixtures.swift in Sources */,
+				6048AAE93A1DAC77AF35FECF /* FindyGraphics.swift in Sources */,
+				D58A9B92EB7933D1FE8FEB8E /* SystemPromptEditorView.swift in Sources */,
+				EBDE3025A897EA6CCABB9C8F /* OnboardingView.swift in Sources */,
+				CDC5EEED27FF87E296514131 /* AssistantLimits.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9125814FABBD105B6A7ADE75 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				262D200195516F27D3DCA97C /* FindyActivity.swift in Sources */,
+				F8233C44672808A925F0F545 /* ChatActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		36AD35DBAF0C0E93B589C349 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Findy;
+			target = CE2A127C32556DA8C0ECC9AE /* Findy */;
+			targetProxy = 0042EA5C0BC7F5C2E1346983 /* PBXContainerItemProxy */;
+		};
+		4FCA78970AA835D38CB2B173 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = FindyActivity;
+			target = 7A6D8E0110C2063CA30A8AB8 /* FindyActivity */;
+			targetProxy = 218D3060FAB28709BD34D963 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		6BE2949FCEDC502B64198973 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = J546P6PL7M;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Findy/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.khodyrev.findy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		7C05A60BE5149A22ACB42514 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J546P6PL7M;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.khodyrev.findy.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Findy;
+			};
+			name = Debug;
+		};
+		8A3D735D9E704B843B2182A4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J546P6PL7M;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.khodyrev.findy.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Findy;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A15352C98D425181909424BC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A8EC6499ED932DD8EF4D1357 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = J546P6PL7M;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Findy/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.khodyrev.findy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E5D42B158675286487978097 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = J546P6PL7M;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FindyActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.khodyrev.findy.activity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E874639DDE9FA9E0EEF3BF9A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 19;
+				DEVELOPMENT_TEAM = J546P6PL7M;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FindyActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.khodyrev.findy.activity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		FB3F500EC13C202573118194 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		40D66CB7F5584CE34BCC2FDF /* Build configuration list for PBXProject "Findy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A15352C98D425181909424BC /* Debug */,
+				FB3F500EC13C202573118194 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		62C2EED98AA75F9E3B60E8DC /* Build configuration list for PBXNativeTarget "FindyUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8A3D735D9E704B843B2182A4 /* Release */,
+				7C05A60BE5149A22ACB42514 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1CEF2E6110DCA13C84428FB /* Build configuration list for PBXNativeTarget "Findy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6BE2949FCEDC502B64198973 /* Release */,
+				A8EC6499ED932DD8EF4D1357 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA7E9139456F4AD44EDC41AD /* Build configuration list for PBXNativeTarget "FindyActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E874639DDE9FA9E0EEF3BF9A /* Release */,
+				E5D42B158675286487978097 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E1852E7D63B57172816E1A6B /* Project object */;
+}
