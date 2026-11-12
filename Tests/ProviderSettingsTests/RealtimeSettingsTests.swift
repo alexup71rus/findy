@@ -37,6 +37,21 @@ final class RealtimeSettingsTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    func testRealtimeUpgradePreservesInactiveCustomPrompt() async throws {
+        try await MainActor.run {
+            try withFixture { fixture in
+                var original = AssistantProvider(name: "OpenAI", endpoint: "https://api.openai.com/v1", models: ["model"], systemPrompt: "Сохранённая инструкция")
+                original.promptPreset = .helpful
+                try fixture.settings.upsertProvider(original, apiKey: "key")
+                XCTAssertTrue(try fixture.settings.installRealtimeConnectionIfNeeded())
+                let upgraded = try XCTUnwrap(fixture.settings.selectedProvider)
+                XCTAssertEqual(upgraded.promptPreset, .helpful)
+                XCTAssertEqual(upgraded.customSystemPrompt, original.customSystemPrompt)
+                XCTAssertEqual(upgraded.systemPrompt, AssistantConfiguration.defaultSystemPrompt)
+            }
+        }
+    }
+
     func testUpgradeCopiesTheSelectedOpenAICredentialAndKeepsTheOriginalProvider() async throws {
         try await MainActor.run {
             try withFixture { fixture in

@@ -114,7 +114,8 @@ final class FindyLimitsUITests: XCTestCase {
         app.buttons["system-prompt-cancel"].tap()
         row.tap()
         XCTAssertEqual(editor.value as? String, original)
-        app.buttons["system-prompt-restore-default"].tap()
+        app.buttons["system-prompt-preset"].tap()
+        app.buttons["Полезный"].tap()
         XCTAssertTrue(app.buttons["system-prompt-save"].isEnabled)
         let restored = editor.value as? String ?? ""
         XCTAssertLessThanOrEqual(restored.count, 500)
@@ -123,6 +124,9 @@ final class FindyLimitsUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertEqual(editor.value as? String, restored)
+        app.buttons["system-prompt-preset"].tap()
+        app.buttons["Пользовательский"].tap()
+        XCTAssertEqual(editor.value as? String, original)
     }
 
     func testMemoryCapLeavesLegacyEntriesVisibleAndEditable() {

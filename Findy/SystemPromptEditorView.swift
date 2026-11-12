@@ -4,20 +4,32 @@ import SwiftUI
 struct SystemPromptEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var session = VoiceSession.shared
-    @State private var draft: String
+    @State private var preset: SystemPromptPreset
+    @State private var customPrompt: String
+    private let originalCustomPrompt: String
     @State private var saveError = ""
     @State private var showingSaveError = false
 
     private let providerName: String
-    private let onSave: (String) throws -> Void
+    private let onSave: (SystemPromptPreset, String) throws -> Void
 
-    init(prompt: String, providerName: String, onSave: @escaping (String) throws -> Void) {
-        _draft = State(initialValue: prompt)
-        self.providerName = providerName
+    init(provider: AssistantProvider, onSave: @escaping (SystemPromptPreset, String) throws -> Void) {
+        _preset = State(initialValue: provider.promptPreset)
+        _customPrompt = State(initialValue: provider.customSystemPrompt)
+        originalCustomPrompt = provider.customSystemPrompt
+        self.providerName = provider.name
         self.onSave = onSave
     }
 
     private var editingDisabled: Bool { session.isRunning || session.isSendingText || session.phase != .idle }
+
+    private var displayedPrompt: String {
+        preset.builtinPrompt ?? customPrompt
+    }
+
+    private var canSave: Bool {
+        !editingDisabled && (customPrompt.count <= AssistantLimits.systemPromptCharacters || (preset != .custom && customPrompt == originalCustomPrompt))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,7 +39,22 @@ struct SystemPromptEditorView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
             }
-            TextEditor(text: $draft)
+            Picker("Вариант промпта", selection: $preset) {
+                Text("Полезный").tag(SystemPromptPreset.helpful)
+                Text("Циничный").tag(SystemPromptPreset.cynical)
+                Text("Мотивирующий").tag(SystemPromptPreset.motivating)
+                Text("Пользовательский").tag(SystemPromptPreset.custom)
+            }
+            .pickerStyle(.menu)
+            .disabled(editingDisabled)
+            .accessibilityIdentifier("system-prompt-preset")
+            TextEditor(text: Binding(
+                get: { displayedPrompt },
+                set: { value in
+                    customPrompt = value
+                    preset = .custom
+                }
+            ))
                 .font(.body)
                 .scrollContentBackground(.hidden)
                 .padding(12)
@@ -35,21 +62,10 @@ struct SystemPromptEditorView: View {
                 .disabled(editingDisabled)
                 .accessibilityLabel("Системный промпт")
                 .accessibilityIdentifier("system-prompt-editor")
-            CharacterLimitCounter(count: draft.count, limit: AssistantLimits.systemPromptCharacters)
+            CharacterLimitCounter(count: displayedPrompt.count, limit: AssistantLimits.systemPromptCharacters)
                 .padding(.horizontal, 4)
                 .accessibilityIdentifier("system-prompt-character-count")
-            Button {
-                guard !editingDisabled else { return }
-                draft = AssistantConfiguration.defaultSystemPrompt
-            } label: {
-                Text("Восстановить по умолчанию")
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .disabled(editingDisabled || draft == AssistantConfiguration.defaultSystemPrompt)
-            .accessibilityIdentifier("system-prompt-restore-default")
+
         }
         .padding(16)
         .background(Color(uiColor: .systemGroupedBackground))
@@ -64,7 +80,7 @@ struct SystemPromptEditorView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Сохранить") { save() }
                     .fontWeight(.semibold)
-                    .disabled(editingDisabled || draft.count > AssistantLimits.systemPromptCharacters)
+                    .disabled(!canSave)
                     .accessibilityIdentifier("system-prompt-save")
             }
         }
@@ -76,9 +92,9 @@ struct SystemPromptEditorView: View {
     }
 
     private func save() {
-        guard !editingDisabled, draft.count <= AssistantLimits.systemPromptCharacters else { return }
+        guard canSave else { return }
         do {
-            try onSave(draft)
+            try onSave(preset, customPrompt)
             dismiss()
         } catch {
             saveError = error.localizedDescription

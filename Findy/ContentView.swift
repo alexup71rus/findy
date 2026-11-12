@@ -44,7 +44,8 @@ struct ContentView: View {
             if let input = ProcessInfo.processInfo.environment["FINDY_UI_TEST_DRAFT"] {
                 _draftMessage = State(initialValue: AssistantLimits.clipped(input, to: AssistantLimits.inputCharacters))
             }
-            let phase: VoiceSession.Phase? = args.contains("--preview-voice-listening") ? .listening
+            let phase: VoiceSession.Phase? = args.contains("--preview-voice-starting") ? .starting
+                : args.contains("--preview-voice-listening") ? .listening
                 : args.contains("--preview-voice-thinking") ? .thinking
                 : args.contains("--preview-voice-speaking") ? .speaking
                 : args.contains("--preview-voice-stopping") ? .stopping : nil
@@ -381,20 +382,17 @@ struct ContentView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 Group {
                     if voiceComposerActive {
-                        HStack(spacing: 10) {
-                            Text(voiceComposerStatus)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .accessibilityAddTraits(.updatesFrequently)
-                            VoiceComposerWave(phase: displayedVoicePhase, isPresented: page == nil && !showingOnboarding)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 34)
-                        }
-                        .padding(.horizontal, 16)
-                        .frame(height: 50)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("chat-voice-composer")
+                        VoiceComposerWave(phase: displayedVoicePhase, isPresented: page == nil && !showingOnboarding)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 34)
+                            .padding(.horizontal, 16)
+                            .frame(height: 50)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityHidden(false)
+                            .accessibilityLabel("Голосовой разговор")
+                            .accessibilityValue(voiceComposerStatus)
+                            .accessibilityAddTraits(.updatesFrequently)
+                            .accessibilityIdentifier("chat-voice-composer")
                     } else {
                         HStack(alignment: .bottom, spacing: 0) {
                             TextField("Сообщение…", text: Binding(

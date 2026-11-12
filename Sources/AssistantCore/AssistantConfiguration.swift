@@ -7,7 +7,8 @@ public enum AssistantAPIStyle: String, Codable, CaseIterable, Sendable {
 }
 
 public struct AssistantConfiguration: Codable, Equatable, Sendable {
-    public static let defaultSystemPrompt = "Ты — Findy, дружелюбный голосовой помощник. Отвечай на языке пользователя, кратко и естественно, обычно в 1–3 предложениях. Не используй Markdown и не зачитывай ссылки. Если веб-поиск недоступен, не утверждай, что проверил актуальную информацию."
+    public static let legacySystemPrompt = "Ты — Findy, дружелюбный голосовой помощник. Отвечай на языке пользователя, кратко и естественно, обычно в 1–3 предложениях. Не используй Markdown и не зачитывай ссылки. Если веб-поиск недоступен, не утверждай, что проверил актуальную информацию."
+    public static let defaultSystemPrompt = "Ты — Findy, полезный голосовой помощник. Отвечай на языке пользователя прямо и кратко, обычно в 1–3 предложениях. Говори спокойно, без лести, навязчивой дружелюбности и искусственного сленга. Признавай неопределённость, не выдумывай факты, действия или результаты поиска. Для актуальных фактов используй поиск, если он доступен и нужен. Не используй Markdown и не зачитывай ссылки."
 
     public var endpoint: String
     public var model: String
@@ -71,13 +72,35 @@ public struct AssistantConfiguration: Codable, Equatable, Sendable {
     }
 }
 
+public enum SystemPromptPreset: String, Codable, Sendable {
+    case helpful, cynical, motivating, custom
+
+    public var builtinPrompt: String? {
+        switch self {
+        case .helpful:
+            return AssistantConfiguration.defaultSystemPrompt
+        case .cynical:
+            return "Ты — Findy, голосовой помощник. Отвечай на языке пользователя кратко и по делу, обычно в 1–3 предложениях. Говори сухо и скептично, допускай мягкую иронию без оскорблений пользователя. Признавай неопределённость, не выдумывай факты, действия или результаты поиска. Для актуальных фактов используй поиск, если он доступен и нужен. Не используй Markdown и не зачитывай ссылки."
+        case .motivating:
+            return "Ты — Findy, голосовой помощник. Отвечай на языке пользователя кратко и по делу, обычно в 1–3 предложениях. Поддерживай практическими советами и посильными шагами, без давления, лести, токсичного позитива и пустых обещаний. Признавай неопределённость, не выдумывай факты, действия или результаты поиска. Для актуальных фактов используй поиск, если он доступен и нужен. Не используй Markdown и не зачитывай ссылки."
+        case .custom:
+            return nil
+        }
+    }
+}
+
 public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public var name: String
     public var endpoint: String
     public var apiStyle: AssistantAPIStyle
     public var models: [String]
-    public var systemPrompt: String
+    public var promptPreset: SystemPromptPreset
+    public var customSystemPrompt: String
+    public var systemPrompt: String {
+        get { promptPreset.builtinPrompt ?? customSystemPrompt }
+        set { promptPreset = .custom; customSystemPrompt = newValue }
+    }
     public var webSearchEnabled: Bool
     public var realtimeVoice: String
     public var webSearchModel: String
@@ -88,7 +111,7 @@ public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
         endpoint: String,
         apiStyle: AssistantAPIStyle = .chatCompletions,
         models: [String] = [],
-        systemPrompt: String = AssistantConfiguration.defaultSystemPrompt,
+        systemPrompt: String? = nil,
         webSearchEnabled: Bool = false,
         realtimeVoice: String = "marin",
         webSearchModel: String = "gpt-6-luna"
@@ -98,7 +121,8 @@ public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
         self.endpoint = endpoint
         self.apiStyle = apiStyle
         self.models = models
-        self.systemPrompt = systemPrompt
+        self.promptPreset = systemPrompt == nil ? .helpful : .custom
+        self.customSystemPrompt = systemPrompt ?? ""
         self.webSearchEnabled = webSearchEnabled
         self.realtimeVoice = realtimeVoice
         self.webSearchModel = webSearchModel
@@ -117,7 +141,7 @@ public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, endpoint, apiStyle, models, systemPrompt, webSearchEnabled, realtimeVoice, webSearchModel
+        case id, name, endpoint, apiStyle, models, systemPrompt, promptPreset, customSystemPrompt, webSearchEnabled, realtimeVoice, webSearchModel
     }
 
     public init(from decoder: Decoder) throws {
@@ -127,10 +151,35 @@ public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
         endpoint = try values.decode(String.self, forKey: .endpoint)
         apiStyle = try values.decode(AssistantAPIStyle.self, forKey: .apiStyle)
         models = try values.decode([String].self, forKey: .models)
-        systemPrompt = try values.decodeIfPresent(String.self, forKey: .systemPrompt) ?? AssistantConfiguration.defaultSystemPrompt
+        let legacyPrompt = try values.decodeIfPresent(String.self, forKey: .systemPrompt)
+        if let preset = try values.decodeIfPresent(SystemPromptPreset.self, forKey: .promptPreset) {
+            promptPreset = preset
+            customSystemPrompt = try values.decodeIfPresent(String.self, forKey: .customSystemPrompt) ?? (preset == .custom ? legacyPrompt ?? "" : "")
+        } else if let legacyPrompt, legacyPrompt != AssistantConfiguration.legacySystemPrompt {
+            promptPreset = .custom
+            customSystemPrompt = legacyPrompt
+        } else {
+            promptPreset = .helpful
+            customSystemPrompt = ""
+        }
         webSearchEnabled = try values.decodeIfPresent(Bool.self, forKey: .webSearchEnabled) ?? false
         realtimeVoice = try values.decodeIfPresent(String.self, forKey: .realtimeVoice) ?? "marin"
         webSearchModel = try values.decodeIfPresent(String.self, forKey: .webSearchModel) ?? "gpt-6-luna"
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(name, forKey: .name)
+        try values.encode(endpoint, forKey: .endpoint)
+        try values.encode(apiStyle, forKey: .apiStyle)
+        try values.encode(models, forKey: .models)
+        try values.encode(systemPrompt, forKey: .systemPrompt)
+        try values.encode(promptPreset, forKey: .promptPreset)
+        try values.encode(customSystemPrompt, forKey: .customSystemPrompt)
+        try values.encode(webSearchEnabled, forKey: .webSearchEnabled)
+        try values.encode(realtimeVoice, forKey: .realtimeVoice)
+        try values.encode(webSearchModel, forKey: .webSearchModel)
     }
 }
 

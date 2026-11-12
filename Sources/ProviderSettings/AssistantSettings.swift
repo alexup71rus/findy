@@ -164,7 +164,7 @@ final class AssistantSettings: ObservableObject {
               try storageOrigin(for: original) == "https://api.openai.com" else { return false }
         let key = try apiKey(for: original)
         guard !key.isEmpty else { return false }
-        let provider = AssistantProvider(
+        var provider = AssistantProvider(
             name: "OpenAI Realtime",
             endpoint: "https://api.openai.com/v1",
             apiStyle: .realtime,
@@ -174,19 +174,21 @@ final class AssistantSettings: ObservableObject {
             realtimeVoice: "marin",
             webSearchModel: original.apiStyle == .responses ? configuration.model : "gpt-6-luna"
         )
-        try upsertProvider(provider, apiKey: key)
+        provider.promptPreset = original.promptPreset
+        provider.customSystemPrompt = original.customSystemPrompt
+        try upsertProvider(provider, apiKey: key, inheritedCustomPrompt: original.customSystemPrompt)
         try selectModel(providerID: provider.id, modelID: "gpt-realtime-2.1-mini")
         defaults.set(true, forKey: marker)
         return true
     }
 
-    func upsertProvider(_ provider: AssistantProvider, apiKey: String?) throws {
+    func upsertProvider(_ provider: AssistantProvider, apiKey: String?, inheritedCustomPrompt: String? = nil) throws {
         var saved = provider
         saved.name = saved.name.trimmingCharacters(in: .whitespacesAndNewlines)
         saved.endpoint = saved.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !saved.name.isEmpty else { throw SettingsFailure(message: "Укажите название провайдера.") }
-        let existingPrompt = providers.first(where: { $0.id == saved.id })?.systemPrompt
-        guard saved.systemPrompt.count <= AssistantLimits.systemPromptCharacters || saved.systemPrompt == existingPrompt else {
+        let existingPrompt = providers.first(where: { $0.id == saved.id })?.customSystemPrompt
+        guard saved.customSystemPrompt.count <= AssistantLimits.systemPromptCharacters || saved.customSystemPrompt == existingPrompt || saved.customSystemPrompt == inheritedCustomPrompt else {
             throw SettingsFailure(message: "Системная инструкция слишком длинная. Сократите её до 500 символов.")
         }
         var seen = Set<String>()

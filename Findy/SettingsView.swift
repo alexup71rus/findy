@@ -190,11 +190,12 @@ struct SettingsView: View {
         Section {
             if let provider = settings.selectedProvider {
                 NavigationLink {
-                    SystemPromptEditorView(prompt: provider.systemPrompt, providerName: provider.name) { prompt in
+                    SystemPromptEditorView(provider: provider) { preset, customPrompt in
                         guard var current = settings.providers.first(where: { $0.id == provider.id }) else {
                             throw CocoaError(.fileNoSuchFile)
                         }
-                        current.systemPrompt = prompt
+                        current.promptPreset = preset
+                        current.customSystemPrompt = customPrompt
                         try settings.upsertProvider(current, apiKey: nil)
                     }
                 } label: {

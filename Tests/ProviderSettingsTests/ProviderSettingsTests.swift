@@ -18,6 +18,74 @@ private final class MemoryKeys: ProviderKeyStore {
 }
 
 final class ProviderSettingsTests: XCTestCase, @unchecked Sendable {
+    func testPromptPresetMigrationAndPersistence() async throws {
+        try await MainActor.run {
+            let suite = "Findy.PresetTest." + UUID().uuidString
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let keys = MemoryKeys()
+            let settings = AssistantSettings(defaults: defaults, keyStore: keys)
+            var provider = AssistantProvider(name: "Local", endpoint: "http://127.0.0.1:11434/v1", models: ["model"])
+            XCTAssertEqual(provider.promptPreset, .helpful)
+            XCTAssertEqual(provider.customSystemPrompt, "")
+            provider.systemPrompt = "Мой точный текст"
+            try settings.upsertProvider(provider, apiKey: nil)
+            provider.promptPreset = .helpful
+            try settings.upsertProvider(provider, apiKey: nil)
+            let restored = AssistantSettings(defaults: defaults, keyStore: keys)
+            var loaded = try XCTUnwrap(restored.selectedProvider)
+            XCTAssertEqual(loaded.customSystemPrompt, "Мой точный текст")
+            XCTAssertEqual(restored.configuration.systemPrompt, AssistantConfiguration.defaultSystemPrompt)
+            loaded.promptPreset = .custom
+            try restored.upsertProvider(loaded, apiKey: nil)
+            XCTAssertEqual(AssistantSettings(defaults: defaults, keyStore: keys).configuration.systemPrompt, "Мой точный текст")
+
+            let encoded = try JSONEncoder().encode(provider)
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+            object.removeValue(forKey: "promptPreset")
+            object.removeValue(forKey: "customSystemPrompt")
+            for prompt: String? in [nil, AssistantConfiguration.legacySystemPrompt, "Пользовательский текст", String(repeating: "я", count: 501)] {
+                object["systemPrompt"] = prompt
+                let decoded = try JSONDecoder().decode(AssistantProvider.self, from: JSONSerialization.data(withJSONObject: object))
+                let isDefault = prompt == nil || prompt == AssistantConfiguration.legacySystemPrompt
+                XCTAssertEqual(decoded.promptPreset, isDefault ? .helpful : .custom)
+                XCTAssertEqual(decoded.customSystemPrompt, isDefault ? "" : (prompt ?? ""))
+                XCTAssertEqual(decoded.systemPrompt, isDefault ? AssistantConfiguration.defaultSystemPrompt : (prompt ?? ""))
+            }
+        }
+    }
+
+    func testBuiltinPresetsRoundTripAndUseTheirOwnEffectivePrompts() async throws {
+        try await MainActor.run {
+            let suite = "Findy.BuiltinPresets." + UUID().uuidString
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let keys = MemoryKeys()
+            let settings = AssistantSettings(defaults: defaults, keyStore: keys)
+            var provider = AssistantProvider(name: "Local", endpoint: "http://127.0.0.1:11434/v1", models: ["model"], systemPrompt: "Keep this custom prompt")
+            try settings.upsertProvider(provider, apiKey: nil)
+            var prompts = Set<String>()
+            for preset in [SystemPromptPreset.helpful, .cynical, .motivating] {
+                provider.promptPreset = preset
+                try settings.upsertProvider(provider, apiKey: nil)
+                let restored = AssistantSettings(defaults: defaults, keyStore: keys)
+                let loaded = try XCTUnwrap(restored.selectedProvider)
+                let effective = try XCTUnwrap(preset.builtinPrompt)
+                XCTAssertEqual(loaded.promptPreset, preset)
+                XCTAssertEqual(loaded.customSystemPrompt, "Keep this custom prompt")
+                XCTAssertEqual(loaded.systemPrompt, effective)
+                XCTAssertEqual(restored.configuration.systemPrompt, effective)
+                XCTAssertEqual(loaded.configuration(for: "model").systemPrompt, effective)
+                XCTAssertLessThanOrEqual(effective.count, AssistantLimits.systemPromptCharacters)
+                prompts.insert(effective)
+            }
+            XCTAssertEqual(prompts.count, 3)
+            provider.promptPreset = .custom
+            try settings.upsertProvider(provider, apiKey: nil)
+            XCTAssertEqual(AssistantSettings(defaults: defaults, keyStore: keys).configuration.systemPrompt, "Keep this custom prompt")
+        }
+    }
+
     func testOnboardingCompletionPersistsOnlyInItsOwnSettingsSuite() async {
         await MainActor.run {
             let suite = "Findy.OnboardingTest." + UUID().uuidString

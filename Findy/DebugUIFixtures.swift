@@ -23,11 +23,12 @@ enum DebugUIFixtures {
         }
         let settings = AssistantSettings.shared
         if args.contains("--skip-onboarding") { settings.completeOnboarding() }
-        let localReplies = args.contains("--ui-local-replies") || args.contains("--seed-ui-history") || args.contains("--seed-ui-rich-history") || args.contains("--seed-ui-delete-history")
+        let showcase = args.contains("--seed-ui-showcase")
+        let localReplies = args.contains("--ui-local-replies") || args.contains("--seed-ui-history") || args.contains("--seed-ui-rich-history") || args.contains("--seed-ui-delete-history") || showcase
         if args.contains("--seed-ui-provider") || localReplies {
             do {
                 if settings.providers.isEmpty {
-                    let provider = AssistantProvider(name: "Тестовый сервис", endpoint: "https://example.invalid/v1", apiStyle: .realtime, models: ["test-model"])
+                    let provider = AssistantProvider(name: showcase ? "Мой помощник" : "Тестовый сервис", endpoint: "https://example.invalid/v1", apiStyle: .realtime, models: ["test-model"])
                     try settings.upsertProvider(provider, apiKey: nil)
                     try settings.selectModel(providerID: provider.id, modelID: "test-model")
                 }
@@ -36,11 +37,23 @@ enum DebugUIFixtures {
         }
         let richHistory = args.contains("--seed-ui-rich-history")
         let deletionHistory = args.contains("--seed-ui-delete-history")
-        guard richHistory || deletionHistory || args.contains("--seed-ui-history") else { return }
+        guard showcase || richHistory || deletionHistory || args.contains("--seed-ui-history") else { return }
         do {
             let store = try PersonalData.shared.requireStore()
             if deletionHistory && fixtureDefaults?.bool(forKey: "deleteHistorySeeded") == true { return }
             guard try store.totalCount() == 0 else { return }
+            if showcase {
+                let messages: [(AssistantMessage.Role, String)] = [
+                    (.user, "Еду за город на выходные. Помоги собрать вещи на два дня."),
+                    (.assistant, "Возьмите документы, телефон с зарядкой, сменную одежду и удобную обувь. Добавьте воду, перекус и средства гигиены. Для прохладного вечера пригодится тёплая кофта."),
+                    (.user, "Обещают дождь. Что добавить?"),
+                    (.assistant, "Дождевик или непромокаемую куртку, запасные носки и пакет для мокрых вещей. Если будете гулять, выбирайте обувь, которая не промокает.")
+                ]
+                for (index, message) in messages.enumerated() {
+                    try store.upsertMessage(AssistantMessage(role: message.0, text: message.1), scope: "conversation", createdAt: Date(timeIntervalSince1970: Double(index)))
+                }
+                return
+            }
             for number in 1...(deletionHistory ? 3 : richHistory ? 80 : 520) {
                 if richHistory {
                     let user = number.isMultiple(of: 2)

@@ -8,6 +8,12 @@ Findy — голосовой AI-помощник, который работае�
 
 Также доступны текстовый чат, память и напоминания.
 
+<p>
+  <img src="assets/screenshots/locked-iphone.png" width="220" alt="Разговор с Findy на заблокированном iPhone">
+  <img src="assets/screenshots/chat.png" width="220" alt="Голосовой разговор и история чата Findy">
+  <img src="assets/screenshots/prompt-presets.png" width="220" alt="Настройка характера ответов Findy">
+</p>
+
 Для работы нужен свой OpenAI-совместимый провайдер (лучше openai с gpt-live для максимально комфортного опыта). Возможности голоса и веб-поиска зависят от выбранного сервиса и модели. История, память и напоминания хранятся на устройстве, API-ключ — в Keychain.
 
 ## Запуск

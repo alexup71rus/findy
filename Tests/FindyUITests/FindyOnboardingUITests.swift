@@ -52,32 +52,35 @@ final class FindyOnboardingUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout: 5))
     }
 
-    func testPromptRestoresDefaultOnlyAfterSaving() {
-        let app = launch(["--seed-ui-provider", "--show-settings"])
+    func testPromptPresetsPreserveCustomAfterSaving() {
+        let app = launch(["--seed-ui-showcase", "--show-settings"])
         let row = app.buttons["system-prompt-settings"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
         let editor = app.textViews["system-prompt-editor"]
-        let restore = app.buttons["system-prompt-restore-default"]
+        let helpful = app.buttons["Полезный"]
+        let custom = app.buttons["Пользовательский"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         let defaultPrompt = editor.value as? String ?? ""
         XCTAssertFalse(defaultPrompt.isEmpty)
-        XCTAssertFalse(restore.isEnabled)
+        app.buttons["system-prompt-preset"].tap()
+        capture("Prompt preset choices", app: app)
+        helpful.tap()
         editor.tap()
         editor.typeText(" Custom instructions")
         let customPrompt = editor.value as? String ?? ""
         XCTAssertNotEqual(customPrompt, defaultPrompt)
-        XCTAssertTrue(restore.isEnabled)
-        capture("Prompt restore button with keyboard", app: app)
+        capture("Prompt custom with keyboard", app: app)
         app.buttons["system-prompt-save"].tap()
         row.tap()
-        restore.tap()
+        app.buttons["system-prompt-preset"].tap()
+        helpful.tap()
         XCTAssertEqual(editor.value as? String, defaultPrompt)
-        XCTAssertFalse(restore.isEnabled)
         app.buttons["system-prompt-cancel"].tap()
         row.tap()
         XCTAssertEqual(editor.value as? String, customPrompt)
-        restore.tap()
+        app.buttons["system-prompt-preset"].tap()
+        helpful.tap()
         app.buttons["system-prompt-save"].tap()
         app.terminate()
         app.launch()
@@ -85,8 +88,92 @@ final class FindyOnboardingUITests: XCTestCase {
         row.tap()
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertEqual(editor.value as? String, defaultPrompt)
-        XCTAssertFalse(restore.isEnabled)
-        capture("Default prompt persisted after relaunch", app: app)
+        app.buttons["system-prompt-preset"].tap()
+        custom.tap()
+        XCTAssertEqual(editor.value as? String, customPrompt)
+        capture("Custom prompt preserved after relaunch", app: app)
+    }
+
+    func testAllPromptPresetsAndCustomSurviveSwitching() {
+        let app = launch(["--seed-ui-provider", "--show-settings"])
+        let row = app.buttons["system-prompt-settings"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        let editor = app.textViews["system-prompt-editor"]
+        let menu = app.buttons["system-prompt-preset"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        let helpfulText = editor.value as? String ?? ""
+        menu.tap()
+        app.buttons["Циничный"].tap()
+        let cynicalText = editor.value as? String ?? ""
+        XCTAssertNotEqual(cynicalText, helpfulText)
+        menu.tap()
+        app.buttons["Мотивирующий"].tap()
+        let motivatingText = editor.value as? String ?? ""
+        XCTAssertNotEqual(motivatingText, helpfulText)
+        XCTAssertNotEqual(motivatingText, cynicalText)
+        menu.tap()
+        app.buttons["Пользовательский"].tap()
+        XCTAssertTrue((editor.value as? String ?? "").isEmpty)
+        editor.tap()
+        editor.typeText("Custom saved")
+        app.buttons["system-prompt-save"].tap()
+        row.tap()
+        menu.tap()
+        app.buttons["Циничный"].tap()
+        app.buttons["system-prompt-save"].tap()
+        app.terminate(); app.launch()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, cynicalText)
+        menu.tap()
+        app.buttons["Пользовательский"].tap()
+        XCTAssertEqual(editor.value as? String, "Custom saved")
+        editor.tap()
+        editor.typeText(" discarded")
+        app.buttons["system-prompt-cancel"].tap()
+        row.tap()
+        XCTAssertEqual(editor.value as? String, cynicalText)
+        menu.tap()
+        app.buttons["Пользовательский"].tap()
+        XCTAssertEqual(editor.value as? String, "Custom saved")
+    }
+
+    func testEmptyCustomPresetRoundTripsAndCancelDiscardsChanges() {
+        let app = launch(["--seed-ui-provider", "--show-settings"])
+        let row = app.buttons["system-prompt-settings"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        let editor = app.textViews["system-prompt-editor"]
+        let helpful = app.buttons["Полезный"]
+        let custom = app.buttons["Пользовательский"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        app.buttons["system-prompt-preset"].tap()
+        custom.tap()
+        XCTAssertTrue((editor.value as? String ?? "").isEmpty)
+        editor.tap()
+        editor.typeText("My custom instructions")
+        app.buttons["system-prompt-save"].tap()
+        row.tap()
+        app.buttons["system-prompt-preset"].tap()
+        helpful.tap()
+        app.buttons["system-prompt-save"].tap()
+        row.tap()
+        app.buttons["system-prompt-preset"].tap()
+        custom.tap()
+        XCTAssertEqual(editor.value as? String, "My custom instructions")
+        editor.tap()
+        editor.typeText(" discarded")
+        app.buttons["system-prompt-cancel"].tap()
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        app.buttons["system-prompt-preset"].tap()
+        custom.tap()
+        XCTAssertEqual(editor.value as? String, "My custom instructions")
     }
 
     func testPromptSaveCancelAndRelaunchPreserveExactText() {

@@ -21,12 +21,12 @@ struct ProviderEditorView: View {
 
     init(provider: AssistantProvider) {
         _draft = State(initialValue: provider)
-        originalSystemPrompt = provider.systemPrompt
+        originalSystemPrompt = provider.customSystemPrompt
     }
 
     private var editingDisabled: Bool { session.isRunning || session.isSendingText || isTesting || isLoadingModels }
     private var invalidPromptDraft: Bool {
-        draft.systemPrompt.count > AssistantLimits.systemPromptCharacters && draft.systemPrompt != originalSystemPrompt
+        draft.customSystemPrompt.count > AssistantLimits.systemPromptCharacters && draft.customSystemPrompt != originalSystemPrompt
     }
     private var hasSavedKey: Bool { !removeSavedKey && settings.hasAPIKey(for: draft) }
     private var testModel: String? {
@@ -233,8 +233,9 @@ struct ProviderEditorView: View {
                 }
             }
             NavigationLink {
-                SystemPromptEditorView(prompt: draft.systemPrompt, providerName: draft.name) { prompt in
-                    draft.systemPrompt = prompt
+                SystemPromptEditorView(provider: draft) { preset, customPrompt in
+                    draft.promptPreset = preset
+                    draft.customSystemPrompt = customPrompt
                 }
             } label: {
                 Label("Системный промпт", systemImage: "text.alignleft")

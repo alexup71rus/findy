@@ -51,14 +51,16 @@ struct VoiceComposerWave: View {
         case .starting: speed = 1.4; amplitude = 7
         case .idle, .stopping: speed = 0; amplitude = 3
         }
-        let coral = Color(red: 0.97, green: dark ? 0.51 : 0.40, blue: 0.37)
-        let amber = Color(red: 1, green: dark ? 0.72 : 0.62, blue: 0.34)
-        let pink = Color(red: 0.92, green: 0.43, blue: 0.61)
+        let ready = phase == .listening || phase == .thinking || phase == .speaking
+        let gray = Color(.systemGray)
+        let coral = ready ? Color(red: 0.97, green: dark ? 0.51 : 0.40, blue: 0.37) : gray
+        let amber = ready ? Color(red: 1, green: dark ? 0.72 : 0.62, blue: 0.34) : gray
+        let pink = ready ? Color(red: 0.92, green: 0.43, blue: 0.61) : gray
         let clock = time * speed
         for strand in 0..<4 {
             let layer = Double(strand)
             var path = Path()
-            // A narrow taper leaves breathing room next to the text and button.
+            // Taper the ribbons before the capsule's rounded edges.
             for step in 0...100 {
                 let x = Double(step) / 100
                 let envelope = pow(sin(.pi * x), 0.8)
@@ -132,6 +134,7 @@ private enum FindyRibbon {
 #Preview("Conversation artwork") {
     VStack(spacing: 24) {
         FindyMark().foregroundStyle(.tertiary).frame(width: 112, height: 54)
+        VoiceComposerWave(phase: .starting).frame(width: 210, height: 34)
         VoiceComposerWave(phase: .listening).frame(width: 210, height: 34)
         VoiceComposerWave(phase: .thinking).frame(width: 210, height: 34)
         VoiceComposerWave(phase: .speaking).frame(width: 210, height: 34)

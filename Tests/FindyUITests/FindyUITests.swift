@@ -48,6 +48,9 @@ final class FindyUITests: XCTestCase {
         XCTAssertTrue(stop.isEnabled && stop.isHittable)
         XCTAssertGreaterThanOrEqual(stop.frame.width, 44)
         let voice = app.descendants(matching: .any)["chat-voice-composer"].firstMatch
+        XCTAssertEqual(voice.label, "Голосовой разговор")
+        XCTAssertEqual(voice.value as? String, "Слушаю")
+        XCTAssertFalse(app.staticTexts["Слушаю"].exists, "The wave describes voice state without visible status text")
         XCTAssertLessThanOrEqual(voice.frame.height, 60, "Voice stays in the existing one-line composer")
         XCTAssertLessThanOrEqual(voice.frame.maxX + 4, stop.frame.minX, "Stop floats outside the capsule")
         let historyBottom = app.scrollViews["chat-history"].frame.maxY
@@ -65,6 +68,22 @@ final class FindyUITests: XCTestCase {
         XCTAssertFalse(closing.buttons["chat-voice-stop"].isEnabled)
         XCTAssertFalse(closing.textFields["chat-composer"].exists)
         XCTAssertFalse(closing.buttons["chat-send"].exists)
+        XCTAssertFalse(closing.staticTexts["Завершаю…"].exists)
+        let closingVoice = closing.descendants(matching: .any)["chat-voice-composer"].firstMatch
+        XCTAssertEqual(closingVoice.value as? String, "Завершаю…")
+    }
+
+    func testStartingVoiceComposerKeepsAccessibleStateWithoutStatusText() {
+        let app = launch(["--preview-voice-starting"])
+        let voice = app.descendants(matching: .any)["chat-voice-composer"].firstMatch
+        XCTAssertTrue(voice.waitForExistence(timeout: 5))
+        XCTAssertEqual(voice.label, "Голосовой разговор")
+        XCTAssertEqual(voice.value as? String, "Подключаюсь…")
+        XCTAssertFalse(app.staticTexts["Подключаюсь…"].exists)
+        XCTAssertFalse(app.textFields["chat-composer"].exists)
+        XCTAssertTrue(app.buttons["chat-voice-stop"].isEnabled)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Gray wave while connecting"; screenshot.lifetime = .keepAlways; add(screenshot)
     }
 
     func testFloatingComposerHidesVoiceForDraftAndKeepsTextCancelInsideField() {
