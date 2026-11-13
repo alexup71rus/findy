@@ -186,3 +186,61 @@ public enum ContextTools {
             parameters: .init(properties: [:], required: []))
     ]
 }
+
+/// Ground voice-only ending in the latest finalized utterance, not history
+/// or tool data; reject common ambiguous uses before the semantic decision.
+public enum VoiceConversationEnd {
+    public static let definition = AssistantToolDefinition(
+        name: "end_voice_conversation",
+        description: "Заверши только голосовой разговор после короткого прощания, только при очень высокой уверенности (не менее 90%), что последняя реплика явно означает, что пользователь закончил разговор или просит отключиться. В source_quote дословно приведи всю последнюю реплику пользователя. Не вызывай при одной лишь благодарности, тишине, вопросе с прощанием, цитате, переводе, фразе «пока не надо» или любом сомнении. Сначала ответь на вопрос; если пользователь продолжает говорить, разговор продолжается.",
+        parameters: .init(properties: ["source_quote": .init("Вся последняя реплика пользователя дословно.", maxLength: 500)], required: ["source_quote"])
+    )
+    public static func isStandaloneFarewell(_ request: String) -> Bool {
+        let text = request.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return text.range(of: #"^(?:пока|до свидания|спокойной ночи|прощай|всего доброго|до встречи|goodbye|bye|good night)[.!…\s]*$"#, options: .regularExpression) != nil
+    }
+    public static func farewell(for request: String) -> String {
+        request.lowercased().contains("ночи") || request.lowercased().contains("night") ? "Спокойной ночи!" : "До свидания!"
+    }
+    public static func containsFarewell(_ text: String) -> Bool {
+        let value = text.lowercased()
+        guard value.rangeOfCharacter(from: CharacterSet(charactersIn: "?？«»\"“”‘’`")) == nil,
+              value.range(of: #"(?:пока\s+не|не\s+прощай|сказал|сказала|перевод|translate|quote)"#, options: .regularExpression) == nil else { return false }
+        return value.range(of: #"(?:^|[\s,;.!…])(?:пока|до свидания|спокойной ночи|прощай|всего доброго|до встречи|goodbye|good night|bye)(?:$|[\s,;.!…])"#, options: .regularExpression) != nil
+    }
+    public static func allowsCall(arguments: String, latestUtterance: String) -> Bool {
+        struct Arguments: Decodable { let source_quote: String }
+        guard arguments.utf8.count <= 4096, let data = arguments.data(using: .utf8),
+              let args = try? JSONDecoder().decode(Arguments.self, from: data) else { return false }
+        func normalized(_ text: String) -> String { text.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased() }
+        let request = normalized(latestUtterance)
+        guard !request.isEmpty, request.count <= 500, normalized(args.source_quote) == request else { return false }
+        guard request.rangeOfCharacter(from: CharacterSet(charactersIn: "?？«»\"“”‘’`")) == nil else { return false }
+        if isStandaloneFarewell(request) { return true }
+        guard request.range(of: #"^(?:спасибо|благодарю|thanks|thank you)[.!…\s]*$"#, options: .regularExpression) == nil,
+              request.range(of: #"(?:^|\s)(?:пока\s+не|не\s+(?:завершай|выключай|отключай|заканчивай)|не\s+надо\s+(?:завершать|отключать)|не\s+прощайся|переведи|перевод|цитат|произнеси|скажи\s+слово|don't\s+(?:stop|end|disconnect)|do not\s+(?:stop|end|disconnect)|translate|quote)"#, options: .regularExpression) == nil,
+              request.range(of: #"(?:^|[,;.!…]\s*)(?:кто|что|где|когда|как|почему|зачем|сколько|какой|какая|можешь|расскажи|объясни|подскажи|напомни|who|what|where|when|why|how|can you|tell me)(?:\s|$)"#, options: .regularExpression) == nil,
+              request.range(of: #"(?:^|[\s,])(?:напомни|расскажи|объясни|подскажи|покажи|вопрос|перевести|перевод|сказал|сказала|сказали|said|question|remind|explain)(?:[\s,.!…]|$)"#, options: .regularExpression) == nil else { return false }
+        return true
+    }
+}
+
+/// The tool acknowledges intent before a separate response and playback. A new
+/// utterance invalidates all three pieces of evidence for the old turn.
+public struct VoiceEndState: Sendable {
+    public private(set) var pending = false
+    private var finishedResponse = false
+    public init() {}
+    public mutating func reset() { pending = false; finishedResponse = false }
+    public mutating func request(preservingCurrentResponse: Bool = false) {
+        pending = true
+        if !preservingCurrentResponse { finishedResponse = false }
+    }
+    public mutating func responseCompleted(success: Bool, hasToolCalls: Bool) {
+        if hasToolCalls { finishedResponse = false; return }
+        if success { finishedResponse = true } else { reset() }
+    }
+    public func shouldEnd(isPlaying: Bool, userSpeaking: Bool, responseActive: Bool) -> Bool {
+        pending && finishedResponse && !isPlaying && !userSpeaking && !responseActive
+    }
+}

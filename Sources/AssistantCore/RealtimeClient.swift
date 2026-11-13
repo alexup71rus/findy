@@ -29,6 +29,7 @@ public enum RealtimeEvent: Equatable, Sendable {
     /// Text is cumulative for this item, including for partial events.
     case inputTranscript(itemID: String, text: String, isFinal: Bool)
     case responseStarted(id: String)
+    case farewellResponseStarted(id: String, turn: String)
     /// Emitted before audio/transcript deltas so an interruption can identify
     /// an assistant message even before its first audio buffer arrives.
     case outputItemStarted(responseID: String, itemID: String)
@@ -195,6 +196,12 @@ public actor RealtimeClient {
         try await send(RealtimeWire.json(["type": "response.create"]))
     }
 
+    /// One short farewell using the current session voice and conversation.
+    public func requestFarewell(_ phrase: String, turn: UUID) async throws {
+        guard ready else { throw RealtimeClientError.notConnected }
+        try await send(RealtimeWire.farewellResponse(phrase: phrase, turn: turn))
+    }
+
     /// An isolated playback-only sample: no conversation item or tool call is
     /// created, and the selected model is explicitly asked to read the phrase.
     public func requestVoicePreview(_ phrase: String) async throws {
@@ -210,6 +217,11 @@ public actor RealtimeClient {
 
     public static func conversationInstructions(_ base: String) -> String {
         base + "\nГовори естественно, спокойно и без дикторской подачи. Не произноси URL, адреса сайтов, номера сносок и список источников; источники отображаются отдельно на экране. Для актуальных сведений используй web_search, если он доступен. Не утверждай, что выполнил поиск, без результата инструмента."
+    }
+
+    public func cancelResponse(id: String) async throws {
+        guard ready, !id.isEmpty else { throw RealtimeClientError.notConnected }
+        try await send(RealtimeWire.cancelResponse(id: id))
     }
 
     public func cancelResponse() async throws {
@@ -298,6 +310,7 @@ public actor RealtimeClient {
                         return
                     }
                     if case .responseStarted = event { responseIsActive = true }
+                    if case .farewellResponseStarted = event { responseIsActive = true }
                     if case .responseDone = event { responseIsActive = false }
                     // Awaiting the consumer supplies backpressure for received
                     // audio; there is no unbounded AsyncStream buffer.
@@ -441,6 +454,19 @@ enum RealtimeWire {
         ]])
     }
 
+    static func cancelResponse(id: String) throws -> Data {
+        guard !id.isEmpty, id.count <= 512 else { throw RealtimeClientError.invalidEvent }
+        return try json(["type": "response.cancel", "response_id": id])
+    }
+
+    static func farewellResponse(phrase: String, turn: UUID) throws -> Data {
+        guard !phrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, phrase.count <= 100 else { throw RealtimeClientError.invalidEvent }
+        return try json(["type": "response.create", "response": [
+            "instructions": "Произнеси только эту короткую фразу и ничего больше: \(phrase)",
+            "tool_choice": "none", "tools": [], "metadata": ["findy_farewell_turn": turn.uuidString]
+        ]])
+    }
+
     static func voicePreviewResponse(phrase: String) throws -> Data {
         guard !phrase.isEmpty, phrase.count <= 300 else { throw RealtimeClientError.invalidEvent }
         let quoted = String(decoding: try JSONEncoder().encode(phrase), as: UTF8.self)
@@ -568,6 +594,9 @@ struct RealtimeEventDecoder {
         case "response.created":
             guard let response = event["response"] as? [String: Any], let id = response["id"] as? String else {
                 throw RealtimeClientError.invalidEvent
+            }
+            if let metadata = response["metadata"] as? [String: String], let turn = metadata["findy_farewell_turn"] {
+                return [.farewellResponseStarted(id: id, turn: turn)]
             }
             return [.responseStarted(id: id)]
         case "response.output_item.added":

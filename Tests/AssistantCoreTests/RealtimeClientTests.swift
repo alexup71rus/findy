@@ -19,6 +19,25 @@ final class RealtimeClientTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: object)
     }
 
+    func testFarewellResponseKeepsSessionVoiceAndHasTurnMetadata() throws {
+        let turn = UUID()
+        let root = try object(RealtimeWire.farewellResponse(phrase: "До свидания!", turn: turn))
+        XCTAssertEqual(root["type"] as? String, "response.create")
+        let response = try XCTUnwrap(root["response"] as? [String: Any])
+        let cancel = try object(RealtimeWire.cancelResponse(id: "stale-response"))
+        XCTAssertEqual(cancel["type"] as? String, "response.cancel")
+        XCTAssertEqual(cancel["response_id"] as? String, "stale-response")
+        XCTAssertNil(response["audio"])
+        XCTAssertNil(response["model"])
+        XCTAssertNil(response["output_modalities"])
+        XCTAssertEqual(response["tool_choice"] as? String, "none")
+        XCTAssertEqual((response["metadata"] as? [String: String])?["findy_farewell_turn"], turn.uuidString)
+        XCTAssertTrue((response["instructions"] as? String)?.contains("До свидания!") == true)
+        var decoder = RealtimeEventDecoder()
+        let payload = try JSONSerialization.data(withJSONObject: ["type": "response.created", "response": ["id": "farewell-id", "metadata": ["findy_farewell_turn": turn.uuidString]]])
+        XCTAssertEqual(try decoder.decode(payload), [.farewellResponseStarted(id: "farewell-id", turn: turn.uuidString)])
+    }
+
     func testWebSocketRequestPreservesPrefixAndOmitsAuthorizationWhenEmpty() throws {
         let request = try RealtimeWire.request(configuration: config(), apiKey: "")
         XCTAssertEqual(request.url?.scheme, "wss")

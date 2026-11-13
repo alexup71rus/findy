@@ -104,6 +104,7 @@ final class VoiceSession: NSObject, ObservableObject {
     private var silenceTimeoutSeconds: TimeInterval = 5
     private var silenceEndReason: String { "\(Int(silenceTimeoutSeconds)) секунд тишины" }
     private var finishAfterSpeech: String?
+    private var pendingVoiceEndSession: UUID?
 
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
     private var log: SessionLog { .shared }
@@ -448,7 +449,7 @@ final class VoiceSession: NSObject, ObservableObject {
         if let configuration = activeConfiguration, activeUsesProviderVoice {
             let realtime = try RealtimeVoiceSession(engine: engine, format: format, configuration: configuration,
                 apiKey: activeAPIKey, history: timeline.context(scope: activeScope, limit: configuration.contextMessageCount, includeAttachments: false), silenceTimeout: silenceTimeoutSeconds,
-                tools: PersonalTools.definitions + ContextTools.definitions)
+                tools: PersonalTools.definitions + ContextTools.definitions + [VoiceConversationEnd.definition])
             self.realtimeVoice = realtime
             realtime.onState = { [weak self] phase, status in
                 guard let self, self.sessionID == identifier, self.isRunning else { return }
@@ -782,6 +783,14 @@ final class VoiceSession: NSObject, ObservableObject {
         updateActivity("Думаю…")
         log.record("speech.recognized", "characters=\(text.count)")
         guard let identifier = sessionID else { return }
+        pendingVoiceEndSession = nil
+        if VoiceConversationEnd.isStandaloneFarewell(text) {
+            let goodbye = VoiceConversationEnd.farewell(for: text)
+            do { try persistMessage(AssistantMessage(role: .assistant, text: goodbye)) }
+            catch { Task { await self.fail(error, reason: "Не удалось сохранить ответ") }; return }
+            speak(goodbye, finishReason: "Разговор завершён")
+            return
+        }
         let replyID = UUID()
         responseTask = Task { [weak self] in
             guard let self else { return }
@@ -793,13 +802,17 @@ final class VoiceSession: NSObject, ObservableObject {
                 guard self.sessionID == identifier, self.isRunning, self.phase == .thinking else { return }
                 self.responseTask = nil
                 self.streamingReply = nil
-                try self.persistMessage(AssistantMessage(id: replyID, role: .assistant, text: ConversationRules.displayText(from: reply.text), sources: reply.sources))
-                self.speak(reply.text, sourceURLs: reply.sources.map(\.url))
+                let shouldEnd = self.pendingVoiceEndSession == identifier
+                self.pendingVoiceEndSession = nil
+                let finalText = shouldEnd && !VoiceConversationEnd.containsFarewell(reply.text) ? reply.text + " До свидания!" : reply.text
+                try self.persistMessage(AssistantMessage(id: replyID, role: .assistant, text: ConversationRules.displayText(from: finalText), sources: reply.sources))
+                self.speak(finalText, sourceURLs: reply.sources.map(\.url), finishReason: shouldEnd ? "Разговор завершён" : nil)
             } catch is CancellationError {
                 return
             } catch {
                 guard self.sessionID == identifier, self.isRunning, self.phase == .thinking else { return }
                 self.responseTask = nil
+                self.pendingVoiceEndSession = nil
                 self.commitStreamingReply()
                 self.lastError = error.localizedDescription
                 self.log.record("assistant.request.failed", SessionLog.describe(error))
@@ -842,6 +855,14 @@ final class VoiceSession: NSObject, ObservableObject {
     private func beginTextSearchMusic() {
         guard isSendingText, !Task.isCancelled else { return }
         WaitingMusicPlayer.shared.beginWaiting(voiceSession: false)
+    }
+
+    private func requestVoiceEnd(call: AssistantToolCall, latestUtterance: String, session: UUID) -> AssistantToolResult {
+        guard isRunning, sessionID == session, VoiceConversationEnd.allowsCall(arguments: call.arguments, latestUtterance: latestUtterance) else {
+            return AssistantToolResult(output: "{\"ok\":false,\"message\":\"Продолжай разговор; намерение завершить не подтверждено.\"}")
+        }
+        pendingVoiceEndSession = session
+        return AssistantToolResult(output: "{\"ok\":true,\"message\":\"Коротко попрощайся. Разговор завершится после воспроизведения ответа.\"}")
     }
 
     private func withImageProgress<T>(_ operation: () async throws -> T) async throws -> T {
@@ -893,12 +914,15 @@ final class VoiceSession: NSObject, ObservableObject {
         let key = activeAPIKey
         let requestMessages = context
         let userRequest = context.last(where: { $0.role == .user })?.text ?? ""
-        let tools = PersonalData.shared.tools(for: userRequest, realtime: configuration.apiStyle == .realtime) + ContextTools.definitions + (voiceSession == nil && configuration.supportsImageGeneration ? [GeneratedImages.tool] : [])
+        let tools = PersonalData.shared.tools(for: userRequest, realtime: configuration.apiStyle == .realtime) + ContextTools.definitions + (voiceSession == nil && configuration.supportsImageGeneration ? [GeneratedImages.tool] : []) + (voiceSession != nil ? [VoiceConversationEnd.definition] : [])
         let scope = activeScope
         let handler: AssistantToolHandler = { [weak self] call in
             if call.name == "web_search" {
                 if let voiceSession { await self?.playCue(.search, session: voiceSession) }
                 else { await self?.beginTextSearchMusic() }
+            }
+            if call.name == "end_voice_conversation", let voiceSession, let self {
+                return await self.requestVoiceEnd(call: call, latestUtterance: userRequest, session: voiceSession)
             }
             if call.name == "generate_image", let self {
                 return try await self.withImageProgress {
@@ -1000,6 +1024,7 @@ final class VoiceSession: NSObject, ObservableObject {
         activeAPIKey = ""
         activeConfiguration = nil
         finishAfterSpeech = nil
+        pendingVoiceEndSession = nil
         startupTask?.cancel()
         startupTask = nil
         endHandoffBackgroundTask()

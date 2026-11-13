@@ -48,6 +48,15 @@ final class RealtimeVoiceSession {
     private var toolsAwaitingResponse = false
     private var readinessCuePending = false
     private var readinessTask: Task<Void, Never>?
+    private var endState = VoiceEndState()
+    private var endTask: Task<Void, Never>?
+    private var fallbackItemID: String?
+    private var fallbackUtterance = ""
+    private var semanticItemID: String?
+    private var semanticUtterance = ""
+    private var currentResponseHasAudio = false
+    private var farewellRequested = false
+    private var ignoredFarewellResponseIDs = Set<String>()
 
     var onState: ((VoiceSession.Phase, String) -> Void)?
     var onLevel: ((Float) -> Void)?
@@ -152,6 +161,9 @@ final class RealtimeVoiceSession {
         monitor?.cancel()
         readinessTask?.cancel()
         readinessTask = nil
+        endTask?.cancel()
+        endTask = nil
+        endState.reset()
         for task in tools.values { task.cancel() }
         tools = [:]
         input.stop()
@@ -174,6 +186,14 @@ final class RealtimeVoiceSession {
             switch event {
             case .ready: break // connect() returns only after history is restored
             case .speechStarted(let itemID):
+                endTask?.cancel()
+                endTask = nil
+                endState.reset()
+                fallbackItemID = nil
+                fallbackUtterance = ""
+                semanticItemID = nil
+                semanticUtterance = ""
+                farewellRequested = false
                 readinessCuePending = false
                 interruptedItems.formUnion(responseItems)
                 responseItems = []
@@ -215,15 +235,49 @@ final class RealtimeVoiceSession {
                 records[index].isFinal = final
                 onUserTranscript?(text)
                 try onMessage?(records[index].message, final)
-                if final { SessionLog.shared.record("realtime.input.transcribed", "characters=\(text.count)") }
+                if final {
+                    if records.last(where: { $0.role == .user })?.serverID == itemID {
+                        if VoiceConversationEnd.isStandaloneFarewell(text), !endState.pending {
+                            fallbackItemID = itemID
+                            fallbackUtterance = text
+                            endState.request(preservingCurrentResponse: true)
+                            refreshPhase()
+                        } else if (fallbackItemID == itemID && !VoiceConversationEnd.isStandaloneFarewell(text)) ||
+                                    (semanticItemID == itemID && semanticUtterance != text) {
+                            fallbackItemID = nil
+                            fallbackUtterance = ""
+                            semanticItemID = nil
+                            semanticUtterance = ""
+                            farewellRequested = false
+                            endTask?.cancel(); endTask = nil
+                            endState.reset()
+                        }
+                    }
+                    SessionLog.shared.record("realtime.input.transcribed", "characters=\(text.count)")
+                }
+            case .farewellResponseStarted(let id, let responseTurn):
+                guard farewellRequested, responseTurn == turn.uuidString, !userSpeaking else {
+                    ignoredFarewellResponseIDs.insert(id)
+                    try await client.cancelResponse(id: id)
+                    return
+                }
+                responseID = id
+                responseItems = []
+                currentResponseHasAudio = false
+                responseActive = true
+                waitingSince = now
+                idleSince = nil
+                refreshPhase()
             case .responseStarted(let id):
                 responseID = id
                 responseItems = []
+                currentResponseHasAudio = false
                 responseActive = true
                 waitingSince = now
                 idleSince = nil
                 refreshPhase()
             case .outputItemStarted(let id, let itemID):
+                if ignoredFarewellResponseIDs.contains(id) { interruptedItems.insert(itemID); return }
                 if id == responseID {
                     responseItems.insert(itemID)
                     _ = try recordIndex(itemID, role: .assistant)
@@ -232,7 +286,7 @@ final class RealtimeVoiceSession {
                 guard !interruptedItems.contains(itemID), !userSpeaking else { return }
                 WaitingMusicPlayer.shared.stop()
                 try output.append(pcm16, itemID: itemID, contentIndex: contentIndex)
-                if !pcm16.isEmpty { readinessCuePending = true }
+                if !pcm16.isEmpty { currentResponseHasAudio = true; readinessCuePending = true }
                 if !firstOutputLogged {
                     firstOutputLogged = true
                     SessionLog.shared.record("realtime.output.firstAudio", "bytes=\(pcm16.count)")
@@ -257,7 +311,19 @@ final class RealtimeVoiceSession {
                     do {
                         guard let self else { return }
                         let result: AssistantToolResult
-                        if let handler = self.toolHandler {
+                        if call.name == "end_voice_conversation" {
+                            let request = try await self.userRequest(for: userItemID, generation: generation, wait: true)
+                            if VoiceConversationEnd.allowsCall(arguments: call.arguments, latestUtterance: request) {
+                                if self.fallbackItemID == nil {
+                                    self.semanticItemID = userItemID
+                                    self.semanticUtterance = request
+                                    self.endState.request()
+                                }
+                                result = AssistantToolResult(output: "{\"ok\":true,\"message\":\"Коротко попрощайся. Разговор завершится после воспроизведения ответа.\"}")
+                            } else {
+                                result = AssistantToolResult(output: "{\"ok\":false,\"message\":\"Продолжай разговор; намерение завершить не подтверждено.\"}")
+                            }
+                        } else if let handler = self.toolHandler {
                             let request = try await self.userRequest(for: userItemID, generation: generation, wait: call.name != "web_search")
                             result = try await handler(call, request)
                         } else {
@@ -274,6 +340,7 @@ final class RealtimeVoiceSession {
             case .contextPruned(let removed, let retained):
                 SessionLog.shared.record("realtime.context.pruned", "removed=\(removed) retainedMessages=\(retained)")
             case .responseDone(let result):
+                if ignoredFarewellResponseIDs.remove(result.id) != nil { return }
                 guard result.id == responseID else { return }
                 responseActive = false
                 if let usage = result.usage {
@@ -282,6 +349,7 @@ final class RealtimeVoiceSession {
                 if result.status == .failed || result.status == .incomplete {
                     throw result.error ?? RealtimeClientError.serverError
                 }
+                endState.responseCompleted(success: result.status == .completed, hasToolCalls: result.hasFunctionCalls)
                 if result.hasFunctionCalls {
                     waitingSince = now
                     toolsAwaitingResponse = true
@@ -348,11 +416,51 @@ final class RealtimeVoiceSession {
     }
 
     private func safeToolName(_ value: String) -> String {
-        ["web_search", "manage_memory", "manage_reminders"].contains(value) ? value : "unknown"
+        ["web_search", "manage_memory", "manage_reminders", "end_voice_conversation"].contains(value) ? value : "unknown"
     }
 
     private func refreshPhase() {
         guard ready, canAcceptInput, readinessTask == nil else { return }
+        if endState.shouldEnd(isPlaying: output.isPlaying, userSpeaking: userSpeaking, responseActive: responseActive),
+           waitingSince == nil, tools.isEmpty {
+            if endTask == nil {
+                let generation = turn
+                endTask = Task { [weak self] in
+                    do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+                    guard let self, !self.stopped, self.turn == generation else { return }
+                    self.endTask = nil
+                    guard self.endState.shouldEnd(isPlaying: self.output.isPlaying, userSpeaking: self.userSpeaking, responseActive: self.responseActive),
+                          self.waitingSince == nil, self.tools.isEmpty else { return }
+                    if self.fallbackItemID != nil || self.semanticItemID != nil {
+                        let saidFarewell = self.currentResponseHasAudio && self.records.contains {
+                            self.responseItems.contains($0.serverID) && $0.role == .assistant && VoiceConversationEnd.containsFarewell($0.text)
+                        }
+                        if !saidFarewell {
+                            guard !self.farewellRequested else {
+                                await self.end("Не удалось попрощаться", error: VoiceError(message: "Сервис не воспроизвёл прощание выбранным голосом."))
+                                return
+                            }
+                            let text = VoiceConversationEnd.farewell(for: self.fallbackItemID != nil ? self.fallbackUtterance : self.semanticUtterance)
+                            self.farewellRequested = true
+                            self.endState.request()
+                            self.responseActive = true
+                            self.waitingSince = self.now
+                            do {
+                                try await self.client.requestFarewell(text, turn: generation)
+                                guard !self.stopped, self.turn == generation, !self.userSpeaking else { return }
+                                self.refreshPhase()
+                            } catch {
+                                guard !self.stopped, self.turn == generation, !self.userSpeaking else { return }
+                                await self.end("Не удалось попрощаться", error: VoiceError(message: "Сервис не воспроизвёл прощание выбранным голосом."))
+                            }
+                            return
+                        }
+                    }
+                    await self.end("Разговор завершён")
+                }
+            }
+            return
+        }
         if userSpeaking {
             idleSince = nil
             onState?(.listening, "Слушаю")
