@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import EventKit
 import UserNotifications
 #if canImport(UIKit)
 import UIKit
@@ -19,13 +20,19 @@ enum ReminderSchedulerError: Error, LocalizedError, Equatable, Sendable {
     case schedulingFailed
     case storageFailed
     case restorationFailed
+    case remindersPermissionDenied
+    case remindersUnavailable
 
     var errorDescription: String? {
         switch self {
         case .permissionRequired:
-            return "Откройте Findy и разрешите уведомления в разделе «Напоминания»."
+            return "Откройте Findy и разрешите доступ к напоминаниям или уведомлениям."
         case .permissionDenied:
             return "Уведомления Findy выключены. Включите их в настройках iPhone."
+        case .remindersPermissionDenied:
+            return "Разрешите Findy доступ к напоминаниям в настройках iPhone."
+        case .remindersUnavailable:
+            return "Не удалось сохранить напоминание в приложении «Напоминания». Проверьте доступ и наличие списка напоминаний."
         case .notFound:
             return "Напоминание больше не найдено. Обновите список."
         case .activeLimit:
@@ -56,6 +63,18 @@ final class ReminderScheduler: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var lastError: String?
 
+    private var nativeStore: EKEventStore?
+    private var nativePersistence: LocalDataStore?
+    @Published private(set) var nativeAuthorization: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .reminder)
+    var usesNativeReminders: Bool { nativeStore != nil }
+    var hasBlockedLegacyReminders: Bool {
+        reminders.contains { $0.status == .blocked && $0.dueAt > currentDate() && (try? nativeIdentifier($0.id)) == nil }
+    }
+    var hasNativeAccess: Bool { nativeAuthorization == .fullAccess }
+    @Published var advanceReminderEnabled: Bool = UserDefaults.standard.object(forKey: "reminderAdvanceEnabled") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(advanceReminderEnabled, forKey: "reminderAdvanceEnabled") }
+    }
+
     private let persistence: any ReminderPersisting
     private let notifications: any ReminderNotificationClient
     private let isForeground: @MainActor () -> Bool
@@ -80,6 +99,8 @@ final class ReminderScheduler: ObservableObject {
             false
             #endif
         })
+        self.nativeStore = EKEventStore()
+        self.nativePersistence = store
     }
 
     /// Injectable boundaries also allow transactional behavior to be verified
@@ -95,9 +116,10 @@ final class ReminderScheduler: ObservableObject {
     }
 
     @discardableResult
-    func create(title: String, dueAt: Date) async throws -> LocalReminder {
+    func create(title: String, dueAt: Date, advance: Bool? = nil) async throws -> LocalReminder {
         try await serialized { [self] in
             let schedule = try ReminderScheduleRules.validate(title: title, dueAt: dueAt, now: currentDate())
+            if nativeStore != nil { return try await createNative(schedule, advance: advance) }
             try await ensurePermission()
             let pending = await notifications.pendingRequests()
             let pendingIDs = Set(pending.map(\.identifier))
@@ -148,10 +170,11 @@ final class ReminderScheduler: ObservableObject {
     }
 
     @discardableResult
-    func update(id: UUID, title: String, dueAt: Date) async throws -> LocalReminder {
+    func update(id: UUID, title: String, dueAt: Date, advance: Bool? = nil) async throws -> LocalReminder {
         try await serialized { [self] in
             let schedule = try ReminderScheduleRules.validate(title: title, dueAt: dueAt, now: currentDate())
             let original = try storedReminder(id)
+            if try nativeIdentifier(id) != nil { return try await updateNative(original, schedule: schedule, advance: advance) }
             try await ensurePermission()
             let pending = await notifications.pendingRequests()
             let previousRequest = pending.first { $0.identifier == original.notificationIdentifier }
@@ -197,6 +220,7 @@ final class ReminderScheduler: ObservableObject {
     func complete(id: UUID) async throws {
         try await serialized { [self] in
             var reminder = try storedReminder(id)
+            if try nativeIdentifier(id) != nil { try await finishNative(reminder, delete: false); return }
             try Task.checkCancellation()
             reminder.status = .completed
             reminder.updatedAt = currentDate()
@@ -211,6 +235,7 @@ final class ReminderScheduler: ObservableObject {
     func delete(id: UUID) async throws {
         try await serialized { [self] in
             let reminder = try storedReminder(id)
+            if try nativeIdentifier(id) != nil { try await finishNative(reminder, delete: true); return }
             try Task.checkCancellation()
             do { try persistence.deleteReminder(id: id) }
             catch { throw ReminderSchedulerError.storageFailed }
@@ -224,6 +249,7 @@ final class ReminderScheduler: ObservableObject {
     /// but never prompts for permission or silently creates a new reminder.
     func refresh() async throws {
         try await serialized { [self] in
+            nativeAuthorization = EKEventStore.authorizationStatus(for: .reminder)
             apply(await notifications.settings())
             let pending = await notifications.pendingRequests()
             var stored: [LocalReminder]
@@ -251,6 +277,34 @@ final class ReminderScheduler: ObservableObject {
             let pendingByID = Dictionary(pending.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
             let now = currentDate()
             for var reminder in stored {
+                if let identifier = try nativeIdentifier(reminder.id) {
+                    guard hasNativeAccess, let nativeStore else {
+                        if reminder.status != .completed && reminder.status != .blocked {
+                            reminder.status = .blocked; reminder.updatedAt = now
+                            do { _ = try persistence.upsertReminder(reminder) } catch { throw ReminderSchedulerError.storageFailed }
+                        }
+                        continue
+                    }
+                    guard let event = nativeStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
+                        do {
+                            try persistence.deleteReminder(id: reminder.id)
+                            try nativePersistence?.setLocalState(nil, for: "eventkit." + reminder.id.uuidString)
+                        } catch { throw ReminderSchedulerError.storageFailed }
+                        continue
+                    }
+                    var changed = false
+                    if let title = event.title, !title.isEmpty, title != reminder.title { reminder.title = title; changed = true }
+                    if let components = event.dueDateComponents, let date = (components.calendar ?? Calendar.current).date(from: components), date != reminder.dueAt {
+                        reminder.dueAt = date; changed = true
+                    }
+                    let status: LocalReminderStatus = event.isCompleted ? .completed : (event.dueDateComponents == nil ? .blocked : .scheduled)
+                    if reminder.status != status { reminder.status = status; changed = true }
+                    if changed {
+                        reminder.updatedAt = now
+                        do { _ = try persistence.upsertReminder(reminder) } catch { throw ReminderSchedulerError.storageFailed }
+                    }
+                    continue
+                }
                 if reminder.status == .completed {
                     notifications.removePending(ids: [reminder.notificationIdentifier])
                     notifications.removeDelivered(ids: [reminder.notificationIdentifier])
@@ -283,6 +337,7 @@ final class ReminderScheduler: ObservableObject {
     func requestPermission() async throws {
         try await serialized { [self] in
             guard isForeground() else { throw ReminderSchedulerError.permissionRequired }
+            if nativeStore != nil { try await ensureNativePermission(); return }
             apply(await notifications.settings())
             guard authorizationStatus != .denied else { throw ReminderSchedulerError.permissionDenied }
             if authorizationStatus == .notDetermined || authorizationStatus == .provisional {
@@ -295,11 +350,157 @@ final class ReminderScheduler: ObservableObject {
         }
     }
 
-    func openSettings() {
+    func requestLegacyPermission() async throws {
+        try await serialized { [self] in
+            guard isForeground() else { throw ReminderSchedulerError.permissionRequired }
+            try await ensurePermission()
+        }
+    }
+
+    func openLegacyNotificationSettings() {
         #if canImport(UIKit)
         guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return }
         UIApplication.shared.open(url)
         #endif
+    }
+
+    func openSettings() {
+        #if canImport(UIKit)
+        guard let url = URL(string: usesNativeReminders ? UIApplication.openSettingsURLString : UIApplication.openNotificationSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+        #endif
+    }
+
+    func advanceAlarmEnabled(for reminder: LocalReminder) -> Bool? {
+        guard hasNativeAccess, let identifier = try? nativeIdentifier(reminder.id),
+              let event = nativeStore?.calendarItem(withIdentifier: identifier) as? EKReminder else { return nil }
+        return hasAdvanceAlarm(event, dueAt: reminder.dueAt)
+    }
+
+    private func hasAdvanceAlarm(_ event: EKReminder, dueAt: Date) -> Bool {
+        event.alarms?.contains { alarm in
+            guard let date = alarm.absoluteDate else { return false }
+            return abs(date.timeIntervalSince(dueAt.addingTimeInterval(-3600))) < 1
+        } ?? false
+    }
+
+    private func nativeIdentifier(_ id: UUID) throws -> String? {
+        guard let nativePersistence else { return nil }
+        do { return try nativePersistence.localState(for: "eventkit." + id.uuidString).flatMap { String(data: $0, encoding: .utf8) } }
+        catch { throw ReminderSchedulerError.storageFailed }
+    }
+
+    private func ensureNativePermission() async throws {
+        guard let nativeStore else { throw ReminderSchedulerError.remindersUnavailable }
+        nativeAuthorization = EKEventStore.authorizationStatus(for: .reminder)
+        if nativeAuthorization == .notDetermined {
+            guard isForeground() else { throw ReminderSchedulerError.permissionRequired }
+            do { _ = try await nativeStore.requestFullAccessToReminders() }
+            catch { throw ReminderSchedulerError.remindersUnavailable }
+            nativeAuthorization = EKEventStore.authorizationStatus(for: .reminder)
+        }
+        guard hasNativeAccess else { throw ReminderSchedulerError.remindersPermissionDenied }
+    }
+
+    private func configure(_ event: EKReminder, schedule: ReminderSchedule, advance: Bool, explicit: Bool) {
+        event.title = schedule.title
+        event.dueDateComponents = ReminderScheduleRules.calendarComponents(for: schedule.dueAt)
+        var dates = ReminderScheduleRules.alarmDates(dueAt: schedule.dueAt, now: currentDate(), advanceEnabled: advance)
+        if explicit && advance && dates.count == 1 && schedule.dueAt.timeIntervalSince(currentDate()) > 3600 {
+            dates.append(schedule.dueAt.addingTimeInterval(-3600))
+        }
+        event.alarms = dates.map { EKAlarm(absoluteDate: $0) }
+    }
+
+    private func createNative(_ schedule: ReminderSchedule, advance: Bool?) async throws -> LocalReminder {
+        try await ensureNativePermission()
+        guard let eventStore = nativeStore, let db = nativePersistence,
+              let calendar = eventStore.defaultCalendarForNewReminders() else { throw ReminderSchedulerError.remindersUnavailable }
+        let now = currentDate()
+        _ = try ReminderScheduleRules.validate(title: schedule.title, dueAt: schedule.dueAt, now: now)
+        let existing = try persistence.reminders(status: nil, limit: 10_000)
+        for item in existing where item.status != .completed && item.title == schedule.title && item.dueAt == schedule.dueAt {
+            if let identifier = try nativeIdentifier(item.id), let event = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder,
+               !event.isCompleted, event.title == schedule.title, let components = event.dueDateComponents,
+               let due = (components.calendar ?? Calendar.current).date(from: components), abs(due.timeIntervalSince(schedule.dueAt)) < 1 {
+                if advance != nil || item.status == .blocked {
+                    return try await updateNative(item, schedule: schedule, advance: advance)
+                }
+                return item
+            }
+        }
+        try Task.checkCancellation()
+        let reminder = LocalReminder(title: schedule.title, dueAt: schedule.dueAt, createdAt: now, updatedAt: now)
+        let event = EKReminder(eventStore: eventStore)
+        event.calendar = calendar
+        configure(event, schedule: schedule, advance: advance ?? advanceReminderEnabled, explicit: advance != nil)
+        do { try eventStore.save(event, commit: true) } catch { throw ReminderSchedulerError.remindersUnavailable }
+        do {
+            try db.setLocalState(Data(event.calendarItemIdentifier.utf8), for: "eventkit." + reminder.id.uuidString)
+            let saved = try db.upsertReminder(reminder)
+            reloadList()
+            return saved
+        } catch {
+            try? eventStore.remove(event, commit: true)
+            try? db.setLocalState(nil, for: "eventkit." + reminder.id.uuidString)
+            throw ReminderSchedulerError.storageFailed
+        }
+    }
+
+    private func nativeEvent(_ id: UUID) async throws -> EKReminder {
+        try await ensureNativePermission()
+        guard let identifier = try nativeIdentifier(id), let event = nativeStore?.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            throw ReminderSchedulerError.notFound
+        }
+        return event
+    }
+
+    private func updateNative(_ original: LocalReminder, schedule: ReminderSchedule, advance: Bool?) async throws -> LocalReminder {
+        let event = try await nativeEvent(original.id)
+        _ = try ReminderScheduleRules.validate(title: schedule.title, dueAt: schedule.dueAt, now: currentDate())
+        let oldTitle = event.title
+        let oldDue = event.dueDateComponents
+        let oldAlarms = event.alarms
+        let oldCompleted = event.isCompleted
+        let hadAdvance = hasAdvanceAlarm(event, dueAt: original.dueAt)
+        try Task.checkCancellation()
+        configure(event, schedule: schedule, advance: advance ?? hadAdvance, explicit: advance != nil)
+        if schedule.dueAt == original.dueAt && (advance == nil || advance == hadAdvance) {
+            event.alarms = oldAlarms
+        }
+        event.isCompleted = false
+        do { try nativeStore?.save(event, commit: true) } catch { throw ReminderSchedulerError.remindersUnavailable }
+        var updated = original
+        updated.title = schedule.title; updated.dueAt = schedule.dueAt; updated.updatedAt = currentDate(); updated.status = .scheduled
+        do { let saved = try persistence.upsertReminder(updated); reloadList(); return saved }
+        catch {
+            event.title = oldTitle; event.dueDateComponents = oldDue; event.alarms = oldAlarms; event.isCompleted = oldCompleted
+            do { try nativeStore?.save(event, commit: true) } catch { throw ReminderSchedulerError.restorationFailed }
+            throw ReminderSchedulerError.storageFailed
+        }
+    }
+
+    private func finishNative(_ reminder: LocalReminder, delete: Bool) async throws {
+        let event: EKReminder
+        do { event = try await nativeEvent(reminder.id) }
+        catch ReminderSchedulerError.notFound where delete {
+            try persistence.deleteReminder(id: reminder.id)
+            try nativePersistence?.setLocalState(nil, for: "eventkit." + reminder.id.uuidString)
+            reloadList()
+            return
+        }
+        try Task.checkCancellation()
+        if delete {
+            do { try nativeStore?.remove(event, commit: true) } catch { throw ReminderSchedulerError.remindersUnavailable }
+            do { try persistence.deleteReminder(id: reminder.id); try nativePersistence?.setLocalState(nil, for: "eventkit." + reminder.id.uuidString) }
+            catch { throw ReminderSchedulerError.storageFailed }
+        } else {
+            event.isCompleted = true
+            do { try nativeStore?.save(event, commit: true) } catch { throw ReminderSchedulerError.remindersUnavailable }
+            var updated = reminder; updated.status = .completed; updated.updatedAt = currentDate()
+            do { _ = try persistence.upsertReminder(updated) } catch { throw ReminderSchedulerError.storageFailed }
+        }
+        reloadList()
     }
 
     private func ensurePermission() async throws {
@@ -437,3 +638,60 @@ private final class SystemReminderNotificationClient: ReminderNotificationClient
     func removePending(ids: [String]) { center.removePendingNotificationRequests(withIdentifiers: ids) }
     func removeDelivered(ids: [String]) { center.removeDeliveredNotifications(withIdentifiers: ids) }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+@MainActor
+extension ReminderScheduler {
+    static func runNativeSmokeIfRequested() async {
+        guard ProcessInfo.processInfo.environment["FINDY_NATIVE_REMINDER_SMOKE"] == "1" else { return }
+        let resultURL = URL.documentsDirectory.appending(path: "native-reminder-smoke.txt")
+        let dbURL = URL.temporaryDirectory.appending(path: "native-reminder-smoke-\(UUID().uuidString).sqlite")
+        var createdID: UUID?
+        var smokeScheduler: ReminderScheduler?
+        do {
+            let db = try LocalDataStore(databaseURL: dbURL)
+            let scheduler = ReminderScheduler(store: db)
+            smokeScheduler = scheduler
+            let now = Date()
+            let due = Calendar.current.startOfDay(for: now).addingTimeInterval(2 * 86400 + 12 * 3600)
+            let created = try await scheduler.create(title: "Findy isolated smoke \(UUID().uuidString)", dueAt: due, advance: true)
+            createdID = created.id
+            guard let key = try db.localState(for: "eventkit." + created.id.uuidString), let identifier = String(data: key, encoding: .utf8),
+                  let event = scheduler.nativeStore?.calendarItem(withIdentifier: identifier) as? EKReminder,
+                  event.alarms?.count == 2, scheduler.advanceAlarmEnabled(for: created) == true else { throw ReminderSchedulerError.remindersUnavailable }
+            let duplicateOff = try await scheduler.create(title: created.title, dueAt: due, advance: false)
+            guard duplicateOff.id == created.id, scheduler.advanceAlarmEnabled(for: duplicateOff) == false,
+                  (scheduler.nativeStore?.calendarItem(withIdentifier: identifier) as? EKReminder)?.alarms?.count == 1 else { throw ReminderSchedulerError.remindersUnavailable }
+            let duplicateOn = try await scheduler.create(title: created.title, dueAt: due, advance: true)
+            guard duplicateOn.id == created.id, scheduler.advanceAlarmEnabled(for: duplicateOn) == true,
+                  (scheduler.nativeStore?.calendarItem(withIdentifier: identifier) as? EKReminder)?.alarms?.count == 2 else { throw ReminderSchedulerError.remindersUnavailable }
+            _ = try await scheduler.update(id: created.id, title: "Findy isolated smoke edited", dueAt: due, advance: true)
+            guard let edited = scheduler.nativeStore?.calendarItem(withIdentifier: identifier) as? EKReminder,
+                  edited.title == "Findy isolated smoke edited", edited.alarms?.count == 2 else { throw ReminderSchedulerError.remindersUnavailable }
+            edited.title = "Findy isolated smoke external"
+            try scheduler.nativeStore?.save(edited, commit: true)
+            try await scheduler.refresh()
+            guard scheduler.reminders.first?.title == "Findy isolated smoke external" else { throw ReminderSchedulerError.storageFailed }
+            try await scheduler.complete(id: created.id)
+            guard let completed = scheduler.nativeStore?.calendarItem(withIdentifier: identifier) as? EKReminder, completed.isCompleted else { throw ReminderSchedulerError.remindersUnavailable }
+            try await scheduler.delete(id: created.id)
+            createdID = nil
+            guard scheduler.nativeStore?.calendarItem(withIdentifier: identifier) == nil, try db.getReminder(id: created.id) == nil else { throw ReminderSchedulerError.storageFailed }
+            let deletedExternally = try await scheduler.create(title: "Findy isolated external delete", dueAt: due, advance: false)
+            createdID = deletedExternally.id
+            guard let externalKey = try db.localState(for: "eventkit." + deletedExternally.id.uuidString),
+                  let externalIdentifier = String(data: externalKey, encoding: .utf8),
+                  let externalEvent = scheduler.nativeStore?.calendarItem(withIdentifier: externalIdentifier) as? EKReminder else { throw ReminderSchedulerError.remindersUnavailable }
+            try scheduler.nativeStore?.remove(externalEvent, commit: true)
+            try await scheduler.refresh()
+            guard try db.getReminder(id: deletedExternally.id) == nil,
+                  try db.localState(for: "eventkit." + deletedExternally.id.uuidString) == nil else { throw ReminderSchedulerError.storageFailed }
+            createdID = nil
+            try "PASS create, duplicate advance off/on, update, external sync, complete, delete, external deletion sync".write(to: resultURL, atomically: true, encoding: .utf8)
+        } catch {
+            if let createdID, let smokeScheduler { try? await smokeScheduler.delete(id: createdID) }
+            try? "FAIL \(error) createdID=\(String(describing: createdID))".write(to: resultURL, atomically: true, encoding: .utf8)
+        }
+    }
+}
+#endif

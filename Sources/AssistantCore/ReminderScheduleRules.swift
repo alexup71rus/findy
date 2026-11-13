@@ -50,15 +50,16 @@ public enum ReminderScheduleRules {
         guard value.range(of: #"(?:Z|[+-]\d{2}:\d{2})$"#, options: .regularExpression) != nil else {
             throw ReminderScheduleError.timeZoneRequired
         }
-        let expression = try NSRegularExpression(pattern: #"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$"#)
+        let expression = try NSRegularExpression(pattern: #"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|[+-]\d{2}:\d{2})$"#)
         let range = NSRange(value.startIndex..<value.endIndex, in: value)
         guard let match = expression.firstMatch(in: value, range: range) else { throw ReminderScheduleError.invalidDate }
         func integer(_ group: Int) -> Int? {
             guard let range = Range(match.range(at: group), in: value) else { return nil }
             return Int(value[range])
         }
+        let second = integer(6) ?? 0
         guard let year = integer(1), let month = integer(2), let day = integer(3),
-              let hour = integer(4), let minute = integer(5), let second = integer(6),
+              let hour = integer(4), let minute = integer(5),
               (1...9999).contains(year), (1...12).contains(month), (1...31).contains(day),
               (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second),
               let zoneRange = Range(match.range(at: 8), in: value) else { throw ReminderScheduleError.invalidDate }
@@ -88,6 +89,14 @@ public enum ReminderScheduleRules {
         }
         guard date.timeIntervalSince(now) >= 1 else { throw ReminderScheduleError.dateNotInFuture }
         return date
+    }
+
+    public static func alarmDates(dueAt: Date, now: Date, advanceEnabled: Bool, calendar: Calendar = .current) -> [Date] {
+        var dates = [dueAt]
+        if advanceEnabled && dueAt.timeIntervalSince(now) > 3600 && !calendar.isDate(dueAt, inSameDayAs: now) {
+            dates.append(dueAt.addingTimeInterval(-3600))
+        }
+        return dates
     }
 
     /// Full date components in UTC preserve the absolute instant across DST and

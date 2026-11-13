@@ -9,6 +9,68 @@ final class FindyUITests: XCTestCase {
         return app
     }
 
+    func testGeneratedImageViewer() {
+        let app = launch(["--seed-ui-image"])
+        let image = app.buttons["Открыть изображение"]
+        XCTAssertTrue(image.waitForExistence(timeout: 5))
+        image.tap()
+        XCTAssertTrue(app.buttons["Закрыть"].waitForExistence(timeout: 5))
+        app.scrollViews.firstMatch.pinch(withScale: 2, velocity: 1)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Generated image viewer zoomed"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.buttons["Поделиться или сохранить"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 3) || app.buttons["Copy"].exists || app.buttons["Скопировать"].exists)
+        app.terminate()
+        let closing = launch(["--seed-ui-image"])
+        closing.buttons["Открыть изображение"].tap()
+        closing.navigationBars["Изображение"].buttons["Закрыть"].tap()
+        XCTAssertTrue(closing.buttons["Открыть изображение"].waitForExistence(timeout: 3))
+    }
+
+    func testSettingsGroupsAndSilenceChoices() {
+        let app = launch(["--seed-ui-provider", "--show-settings"])
+        XCTAssertFalse(app.staticTexts["Для выбранного провайдера"].exists)
+        let settingsShot = XCTAttachment(screenshot: app.screenshot())
+        settingsShot.name = "Grouped settings"; settingsShot.lifetime = .keepAlways; add(settingsShot)
+        app.buttons["system-prompt-settings"].tap()
+        XCTAssertTrue(app.textViews["system-prompt-editor"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Тестовый сервис"].exists)
+        let promptShot = XCTAttachment(screenshot: app.screenshot())
+        promptShot.name = "Prompt without provider heading"; promptShot.lifetime = .keepAlways; add(promptShot)
+        app.buttons["system-prompt-cancel"].tap()
+        app.buttons["voice-settings"].tap()
+        XCTAssertFalse(app.switches["Только Bluetooth-микрофон"].exists)
+        app.buttons["voice-silence-timeout"].tap()
+        for title in ["5 секунд", "10 секунд", "15 секунд", "30 секунд", "Не завершать автоматически"] {
+            XCTAssertTrue(app.buttons[title].exists)
+        }
+        XCTAssertFalse(app.buttons["60 секунд"].exists)
+        XCTAssertFalse(app.buttons["120 секунд"].exists)
+    }
+
+    func testWaitingMusicSelectionAndPreview() {
+        let app = launch(["--show-settings"])
+        app.buttons["voice-settings"].tap()
+        let link = app.buttons["Музыка ожидания"]
+        if !link.isHittable { app.swipeUp() }
+        XCTAssertTrue(link.waitForExistence(timeout: 5))
+        link.tap()
+        let selection = app.buttons["waiting-music-selection"]
+        XCTAssertTrue(selection.waitForExistence(timeout: 5))
+        selection.tap()
+        app.buttons["По очереди"].tap()
+        XCTAssertTrue(selection.label.contains("По очереди") || (selection.value as? String) == "По очереди")
+        let preview = app.buttons["Послушать Лифт · 2"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        preview.tap()
+        let stop = app.buttons["Остановить Лифт · 2"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 3))
+        stop.tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        selection.tap()
+        app.buttons["Нет"].tap()
+    }
+
     func testProviderVoiceSelectionKeepsPreviewExplicit() {
         let app = launch(["--seed-ui-provider", "--show-settings", "--show-speech-settings"])
         let marin = app.buttons["speech.preview.provider:marin"]
@@ -54,8 +116,7 @@ final class FindyUITests: XCTestCase {
         XCTAssertLessThanOrEqual(voice.frame.height, 60, "Voice stays in the existing one-line composer")
         XCTAssertLessThanOrEqual(voice.frame.maxX + 4, stop.frame.minX, "Stop floats outside the capsule")
         let historyBottom = app.scrollViews["chat-history"].frame.maxY
-        XCTAssertLessThanOrEqual(historyBottom, voice.frame.minY)
-        XCTAssertLessThanOrEqual(voice.frame.minY - historyBottom, 24, "No separate panel sits above the composer")
+        XCTAssertGreaterThan(historyBottom, voice.frame.maxY, "The scroll viewport extends behind the floating voice composer")
         stop.tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
         XCTAssertEqual(composer.value as? String, "Сохранённый черновик")
@@ -79,6 +140,7 @@ final class FindyUITests: XCTestCase {
         XCTAssertTrue(voice.waitForExistence(timeout: 5))
         XCTAssertEqual(voice.label, "Голосовой разговор")
         XCTAssertEqual(voice.value as? String, "Подключаюсь…")
+        XCTAssertGreaterThan(voice.frame.width, app.frame.width * 0.6, "An empty history must keep the voice composer at full chat width")
         XCTAssertFalse(app.staticTexts["Подключаюсь…"].exists)
         XCTAssertFalse(app.textFields["chat-composer"].exists)
         XCTAssertTrue(app.buttons["chat-voice-stop"].isEnabled)
@@ -120,6 +182,60 @@ final class FindyUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout: 5))
     }
 
+    func testChatHeaderLayoutAndGitHubCancel() {
+        let app = launch(["--seed-ui-rich-history"])
+        let logo = app.buttons["findy-github"]
+        let menu = app.buttons["findy-menu"]
+        let clear = app.buttons["chat-clear"]
+        XCTAssertTrue(logo.waitForExistence(timeout: 5))
+        XCTAssertLessThan(logo.frame.maxX, menu.frame.minX)
+        XCTAssertEqual(menu.frame.midY, clear.frame.midY, accuracy: 1)
+        XCTAssertLessThanOrEqual(clear.frame.maxX, menu.frame.minX)
+        XCTAssertGreaterThanOrEqual(clear.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(menu.frame.width, 44)
+        let actions = app.descendants(matching: .any)["chat-header-actions"].firstMatch
+        XCTAssertTrue(actions.exists)
+        XCTAssertTrue(actions.frame.contains(clear.frame) && actions.frame.contains(menu.frame))
+        clear.tap()
+        XCTAssertTrue(app.alerts["Очистить чат?"].waitForExistence(timeout: 3))
+        app.alerts.buttons["Отмена"].tap()
+        logo.tap()
+        XCTAssertTrue(app.alerts["Вы будете перенаправлены на GitHub приложения"].waitForExistence(timeout: 3))
+        app.alerts.buttons["Отмена"].tap()
+        XCTAssertTrue(logo.isHittable)
+        app.scrollViews["chat-history"].swipeDown()
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Soft chat edges and shared header capsule"; shot.lifetime = .keepAlways; add(shot)
+        menu.tap()
+        app.buttons["Настройки"].tap()
+        XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Готово"].isHittable)
+        app.buttons["Готово"].tap()
+        XCTAssertTrue(logo.isHittable)
+    }
+
+    func testComposerOverlaysScrollingHistoryAndKeyboard() {
+        let app = launch(["--seed-ui-rich-history"])
+        let history = app.scrollViews["chat-history"]
+        let composer = app.textFields["chat-composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(history.frame.maxY, composer.frame.maxY)
+        history.swipeDown()
+        let jump = app.buttons["chat-jump-latest"]
+        XCTAssertTrue(jump.waitForExistence(timeout: 3))
+        XCTAssertLessThan(jump.frame.maxY, composer.frame.minY)
+        let scrolling = XCTAttachment(screenshot: app.screenshot())
+        scrolling.name = "History underneath floating glass composer"; scrolling.lifetime = .keepAlways; add(scrolling)
+        jump.tap()
+        composer.tap()
+        composer.typeText("Длинный черновик для проверки высоты поля ввода и отступа под последним сообщением. Он занимает несколько строк, пока клавиатура открыта.")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertLessThanOrEqual(composer.frame.maxY, app.keyboards.firstMatch.frame.minY)
+        XCTAssertGreaterThan(history.frame.maxY, composer.frame.maxY)
+        let keyboard = XCTAttachment(screenshot: app.screenshot())
+        keyboard.name = "Multiline floating composer above keyboard"; keyboard.lifetime = .keepAlways; add(keyboard)
+    }
+
     func testRichHistoryStaysInsideViewportWithKeyboardAndScrolling() {
         let app = launch(["--seed-ui-rich-history"])
         let history = app.scrollViews["chat-history"]
@@ -130,6 +246,7 @@ final class FindyUITests: XCTestCase {
         let last = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Вопрос 80:")).firstMatch
         XCTAssertTrue(last.exists)
         let composer = app.textFields["chat-composer"]
+        XCTAssertLessThanOrEqual(last.frame.maxY, composer.frame.minY, "The last row should rest above the floating composer")
         XCTAssertLessThan(composer.frame.minY - last.frame.maxY, 70, "The last row should remain near the composer")
         composer.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))

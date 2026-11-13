@@ -38,7 +38,7 @@ public struct PersonalIntentTracker: Codable, Sendable {
             if PersonalRequestPolicy.allowsReminderChange(text) { actions.insert(.changeReminder) }
             if !actions.isEmpty {
                 origins = Dictionary(uniqueKeysWithValues: actions.map { ($0, String(text.prefix(2_000))) })
-                followupsRemaining = 2
+                followupsRemaining = 4
                 expiresAt = now.addingTimeInterval(180)
             } else {
                 followupsRemaining = max(0, followupsRemaining - 1)

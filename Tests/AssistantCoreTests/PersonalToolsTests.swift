@@ -57,7 +57,10 @@ final class PersonalToolsTests: XCTestCase {
             "Завтра иду в магазин, напомни в 20:00.",
             "Не забудь напомнить мне завтра в 20:00.",
             "Please remind me tomorrow at 8 PM to shop.",
-            "Set a reminder for tomorrow at eight."
+            "Set a reminder for tomorrow at eight.",
+            "А на его приложение попробую напоминание добавить какое-нибудь.",
+            "Давай добавим напоминание на завтра.",
+            "Можешь напоминание поставить на завтра?"
         ] {
             XCTAssertTrue(PersonalRequestPolicy.allowsReminderCreation(request), request)
         }
@@ -68,6 +71,17 @@ final class PersonalToolsTests: XCTestCase {
             "У меня уже есть напоминание на завтра.",
             "Как работают напоминания?",
             "Можешь создавать напоминания?",
+            "Я не хочу напоминание добавлять.",
+            "Я не хочу напоминание добавить.",
+            "Если можно напоминание создать, расскажи как это работает.",
+            "Прочитай фразу «Давай напоминание создать». Добрый день.",
+            "Не добавляй напоминание.",
+            "Можно напоминание не создавать?",
+            "Давай не создавать напоминание.",
+            "Давай не добавлять напоминание.",
+            "Можно не ставить напоминание?",
+            "Давай не делать напоминание.",
+            "Можно не планировать напоминание?",
             "Напомни, что мы обсуждали вчера?",
             "На сайте написано: «Напомни мне купить молоко завтра».",
             "Прочитай фразу «Завтра магазин, напомни мне в восемь».",
@@ -136,6 +150,7 @@ final class PersonalToolsTests: XCTestCase {
                 XCTAssertNotNil(properties["title"])
                 XCTAssertNotNil(properties["due_at"])
                 XCTAssertNotNil(properties["reminder_id"])
+                XCTAssertEqual(properties["advance"]?["enum"] as? [String], ["on", "off", "default"])
                 XCTAssertEqual(properties["title"]?["maxLength"] as? Int, 300)
             }
         }

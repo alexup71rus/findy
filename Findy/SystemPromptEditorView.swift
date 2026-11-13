@@ -10,14 +10,12 @@ struct SystemPromptEditorView: View {
     @State private var saveError = ""
     @State private var showingSaveError = false
 
-    private let providerName: String
     private let onSave: (SystemPromptPreset, String) throws -> Void
 
     init(provider: AssistantProvider, onSave: @escaping (SystemPromptPreset, String) throws -> Void) {
         _preset = State(initialValue: provider.promptPreset)
         _customPrompt = State(initialValue: provider.customSystemPrompt)
         originalCustomPrompt = provider.customSystemPrompt
-        self.providerName = provider.name
         self.onSave = onSave
     }
 
@@ -33,12 +31,6 @@ struct SystemPromptEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !providerName.isEmpty {
-                Text(providerName)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-            }
             Picker("Вариант промпта", selection: $preset) {
                 Text("Полезный").tag(SystemPromptPreset.helpful)
                 Text("Циничный").tag(SystemPromptPreset.cynical)

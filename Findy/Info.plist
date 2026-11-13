@@ -22,6 +22,8 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Findy создаёт и изменяет напоминания по вашей просьбе в приложении «Напоминания».</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Микрофон нужен для голосового разговора, в том числе через AirPods при заблокированном экране.</string>
     <key>NSSpeechRecognitionUsageDescription</key>

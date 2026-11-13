@@ -49,15 +49,17 @@ final class VoiceSession: NSObject, ObservableObject {
     @Published private(set) var speechStatus = "Не проверено"
     @Published private(set) var onDeviceStatus = "Не проверено"
     @Published private(set) var activitiesStatus = "Не проверено"
-    @Published var requireBluetooth = UserDefaults.standard.object(forKey: "requireBluetooth") as? Bool ?? false {
-        didSet { UserDefaults.standard.set(requireBluetooth, forKey: "requireBluetooth") }
-    }
     @Published var soundCuesEnabled = UserDefaults.standard.object(forKey: "soundCuesEnabled") as? Bool ?? true {
         didSet { UserDefaults.standard.set(soundCuesEnabled, forKey: "soundCuesEnabled") }
     }
 
     enum Phase { case idle, starting, listening, thinking, speaking, stopping }
-    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var phase: Phase = .idle {
+        didSet {
+            if phase == .thinking { beginVoiceWaitingMusic() }
+            else { WaitingMusicPlayer.shared.stop() }
+        }
+    }
     private var sessionID: UUID?
     private var turnID: UUID?
     private var engine: AVAudioEngine?
@@ -171,6 +173,7 @@ final class VoiceSession: NSObject, ObservableObject {
             guard let self else { return }
             defer {
                 if self.textRequestID == identifier {
+                    WaitingMusicPlayer.shared.stop()
                     self.isSendingText = false
                     self.textRequestID = nil
                     self.textResponseTask = nil
@@ -184,6 +187,7 @@ final class VoiceSession: NSObject, ObservableObject {
                 guard self.textRequestID == identifier else { return }
                 try self.prepareAssistantConnection()
                 try self.persistMessage(userMessage)
+                WaitingMusicPlayer.shared.beginWaiting(voiceSession: false)
                 self.status = "Думаю…"
                 self.log.record("text.message.accepted", "characters=\(text.count)")
                 let reply = try await self.makeAssistantReply { [weak self] snapshot in
@@ -213,6 +217,7 @@ final class VoiceSession: NSObject, ObservableObject {
 
     func cancelTextReply() {
         guard isSendingText else { return }
+        WaitingMusicPlayer.shared.stop()
         commitStreamingReply()
         textRequestID = nil
         textResponseTask?.cancel()
@@ -233,6 +238,7 @@ final class VoiceSession: NSObject, ObservableObject {
         }
         cancelTextReply()
         VoicePreviewPlayer.shared.stop()
+        WaitingMusicPlayer.shared.stop()
         lastError = nil
         hasBeenReady = false
         transcript = ""
@@ -245,7 +251,7 @@ final class VoiceSession: NSObject, ObservableObject {
         status = "Запускаю микрофон…"
         let identifier = UUID()
         sessionID = identifier
-        log.record("session.start", "id=\(identifier) source=\(source) requireBluetooth=\(requireBluetooth) process=\(log.processID)")
+        log.record("session.start", "id=\(identifier) source=\(source) process=\(log.processID)")
 
         do {
             try prepareAssistantConnection()
@@ -394,10 +400,15 @@ final class VoiceSession: NSObject, ObservableObject {
         try checkCurrent(identifier)
 
         if let bluetooth = audioSession.availableInputs?.first(where: { $0.portType == .bluetoothHFP }) {
-            try audioSession.setPreferredInput(bluetooth)
-            log.record("audio.preferredInput", "input=\(bluetooth.portType.rawValue)")
-        } else if requireBluetooth {
-            throw ChatFailure(message: "Микрофон Bluetooth HFP недоступен. Подключите и наденьте AirPods; проверьте их выбор в аудиомаршруте.")
+            do {
+                try audioSession.setPreferredInput(bluetooth)
+                log.record("audio.preferredInput", "input=\(bluetooth.portType.rawValue)")
+            } catch {
+                // iOS can withdraw a headset between discovery and selection.
+                // Let the system choose another available microphone.
+                try? audioSession.setPreferredInput(nil)
+                log.record("audio.preferredInput.unavailable")
+            }
         }
 
         let engine = AVAudioEngine()
@@ -421,7 +432,7 @@ final class VoiceSession: NSObject, ObservableObject {
         if let configuration = activeConfiguration, activeUsesProviderVoice {
             let realtime = try RealtimeVoiceSession(engine: engine, format: format, configuration: configuration,
                 apiKey: activeAPIKey, history: timeline.context(scope: activeScope, limit: configuration.contextMessageCount), silenceTimeout: silenceTimeoutSeconds,
-                tools: PersonalTools.definitions)
+                tools: PersonalTools.definitions + ContextTools.definitions)
             self.realtimeVoice = realtime
             realtime.onState = { [weak self] phase, status in
                 guard let self, self.sessionID == identifier, self.isRunning else { return }
@@ -481,17 +492,7 @@ final class VoiceSession: NSObject, ObservableObject {
         engine.prepare()
         try engine.start()
 
-        // Selecting a preferred port is only a request. The actual route is
-        // the evidence that this test really uses the headphones' microphone.
-        for _ in 0..<8 {
-            if !requireBluetooth || isBluetoothRoute(audioSession.currentRoute) { break }
-            try await Task.sleep(for: .milliseconds(100))
-            try checkCurrent(identifier)
-        }
         recordRoute("audio.route.started")
-        guard !requireBluetooth || isBluetoothRoute(audioSession.currentRoute) else {
-            throw ChatFailure(message: "iOS не направила и микрофон, и звук в Bluetooth HFP. См. фактический маршрут в журнале.")
-        }
         firstBufferLogged = false
         if let realtimeVoice {
             // Do not open the paid provider connection until the audio graph
@@ -569,6 +570,7 @@ final class VoiceSession: NSObject, ObservableObject {
     @discardableResult
     private func playCue(_ kind: VoiceEarcons.Kind, session: UUID) async -> Bool {
         guard !Task.isCancelled, sessionID == session, isRunning else { return false }
+        if kind == .search, phase != .speaking { beginVoiceWaitingMusic() }
         guard soundCuesEnabled, let earcons else { return true }
         if realtimeVoice?.isUserSpeaking == true { return true }
         let token = UUID()
@@ -612,9 +614,7 @@ final class VoiceSession: NSObject, ObservableObject {
         guard sessionID == identifier, isRunning, !Task.isCancelled else { throw CancellationError() }
     }
 
-    private func isBluetoothRoute(_ route: AVAudioSessionRouteDescription) -> Bool {
-        route.inputs.contains { $0.portType == .bluetoothHFP } && route.outputs.contains { $0.portType == .bluetoothHFP }
-    }
+
 
     private func recordRoute(_ event: String, details: String = "") {
         let session = AVAudioSession.sharedInstance()
@@ -796,6 +796,7 @@ final class VoiceSession: NSObject, ObservableObject {
         if let textRequest, textRequestID != textRequest { return }
         if let voiceSession, sessionID != voiceSession || !isRunning { return }
         guard !reply.text.isEmpty else { return }
+        if textRequest != nil { WaitingMusicPlayer.shared.stop() }
         streamingReply = AssistantMessage(id: id, role: .assistant, text: ConversationRules.displayText(from: reply.text), sources: reply.sources)
     }
 
@@ -806,6 +807,25 @@ final class VoiceSession: NSObject, ObservableObject {
             catch { lastError = error.localizedDescription }
         }
         streamingReply = nil
+    }
+
+    private func beginVoiceWaitingMusic() {
+        // Realtime keeps its mic open for barge-in. AVAudioPlayer is outside
+        // the voice-processing engine, so speaker playback is not guaranteed
+        // to be cancelled by its AEC reference. Local recognition is paused
+        // during thinking; realtime music requires an isolated headphone route.
+        if realtimeVoice != nil {
+            let isolated = AVAudioSession.sharedInstance().currentRoute.outputs.allSatisfy {
+                [.headphones, .bluetoothHFP, .bluetoothA2DP, .bluetoothLE].contains($0.portType)
+            }
+            guard isolated, !AVAudioSession.sharedInstance().currentRoute.outputs.isEmpty else { return }
+        }
+        WaitingMusicPlayer.shared.beginWaiting(voiceSession: true)
+    }
+
+    private func beginTextSearchMusic() {
+        guard isSendingText, !Task.isCancelled else { return }
+        WaitingMusicPlayer.shared.beginWaiting(voiceSession: false)
     }
 
     private func makeAssistantReply(voiceSession: UUID? = nil, onUpdate: (@Sendable (AssistantReply) async -> Void)? = nil) async throws -> AssistantReply {
@@ -822,6 +842,9 @@ final class VoiceSession: NSObject, ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("--ui-local-replies"),
            let value = ProcessInfo.processInfo.environment["FINDY_UI_TEST_SESSION"],
            UUID(uuidString: value) != nil {
+            if context.last?.text == "--image-fixture" {
+                try GeneratedImages.saveFixture(scope: activeScope)
+            }
             let reply = AssistantReply(text: ConversationRules.reply(to: context.last?.text ?? ""))
             let characters = Array(reply.text)
             for step in 1...20 {
@@ -836,10 +859,13 @@ final class VoiceSession: NSObject, ObservableObject {
         let key = activeAPIKey
         let requestMessages = context
         let userRequest = context.last(where: { $0.role == .user })?.text ?? ""
-        let tools = try AssistantToolExecutor.hasPendingRequest(scope: activeScope) ? PersonalTools.definitions : PersonalData.shared.tools(for: userRequest, realtime: configuration.apiStyle == .realtime)
+        let tools = (try AssistantToolExecutor.hasPendingRequest(scope: activeScope) ? PersonalTools.definitions : PersonalData.shared.tools(for: userRequest, realtime: configuration.apiStyle == .realtime)) + ContextTools.definitions + (voiceSession == nil && configuration.supportsImageGeneration ? [GeneratedImages.tool] : [])
         let scope = activeScope
         let handler: AssistantToolHandler = { [weak self] call in
-            if call.name == "web_search", let voiceSession { await self?.playCue(.search, session: voiceSession) }
+            if call.name == "web_search" {
+                if let voiceSession { await self?.playCue(.search, session: voiceSession) }
+                else { await self?.beginTextSearchMusic() }
+            }
             return try await AssistantToolExecutor.execute(call, userRequest: userRequest, scope: scope, configuration: configuration, apiKey: key)
         }
         let client = AssistantClient()
@@ -847,7 +873,7 @@ final class VoiceSession: NSObject, ObservableObject {
         if let voiceSession {
             searchCue = { [weak self] in await self?.playCue(.search, session: voiceSession) }
         } else {
-            searchCue = nil
+            searchCue = { [weak self] in await self?.beginTextSearchMusic() }
         }
         log.record("assistant.request.started", "api=\(configuration.apiStyle.rawValue) searchEnabled=\(configuration.webSearchEnabled) contextMessages=\(requestMessages.count)")
         let reply = try await withThrowingTaskGroup(of: AssistantReply.self) { group in
@@ -858,7 +884,7 @@ final class VoiceSession: NSObject, ObservableObject {
                 return try await client.reply(configuration: configuration, apiKey: key, messages: requestMessages, tools: tools, toolHandler: handler, onWebSearchStarted: searchCue, onUpdate: onUpdate)
             }
             group.addTask {
-                try await Task.sleep(for: .seconds(60))
+                try await Task.sleep(for: .seconds(configuration.supportsImageGeneration ? 300 : 60))
                 throw AssistantClientError.requestTimedOut
             }
             defer { group.cancelAll() }
@@ -1023,9 +1049,6 @@ final class VoiceSession: NSObject, ObservableObject {
                 }
                 guard self.isRunning else { return }
                 self.recordRoute("audio.route.changed", details: "code=\(reason.map(String.init) ?? "0")")
-                if self.phase != .starting, self.requireBluetooth, !self.isBluetoothRoute(AVAudioSession.sharedInstance().currentRoute) {
-                    await self.fail(ChatFailure(message: "Bluetooth-аудиомаршрут потерян."), reason: "AirPods отключены", playEndCue: false)
-                }
             }
         })
         for (name, event) in [

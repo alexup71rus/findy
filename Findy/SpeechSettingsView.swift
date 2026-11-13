@@ -42,6 +42,7 @@ struct SpeechSettingsView: View {
             if !showing { preview.stop() }
         }
         .onAppear {
+            WaitingMusicPlayer.shared.stop()
             if usesProviderVoice { preview.stop() } else { catalog.refresh() }
         }
         .onDisappear { preview.stop() }

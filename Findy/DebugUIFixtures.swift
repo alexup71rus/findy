@@ -35,6 +35,11 @@ enum DebugUIFixtures {
                 if args.contains("--ui-local-replies"), let provider = settings.selectedProvider { settings.grantSharing(for: provider) }
             } catch { SessionLog.shared.record("ui.providerFixture.failed", SessionLog.describe(error)) }
         }
+        if args.contains("--seed-ui-image") {
+            do {
+                if try PersonalData.shared.requireStore().totalCount() == 0 { try GeneratedImages.saveFixture(scope: "conversation") }
+            } catch { SessionLog.shared.record("ui.imageFixture.failed", SessionLog.describe(error)) }
+        }
         let richHistory = args.contains("--seed-ui-rich-history")
         let deletionHistory = args.contains("--seed-ui-delete-history")
         guard showcase || richHistory || deletionHistory || args.contains("--seed-ui-history") else { return }

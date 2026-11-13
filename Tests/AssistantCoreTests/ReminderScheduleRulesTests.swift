@@ -5,10 +5,24 @@ import XCTest
 final class ReminderScheduleRulesTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
+    func testAdvanceAlarmIsOnlyAddedForFutureCalendarDayWhenEnabled() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = calendar.date(from: DateComponents(year: 2027, month: 1, day: 2, hour: 22))!
+        let tomorrow = calendar.date(from: DateComponents(year: 2027, month: 1, day: 3, hour: 1))!
+        XCTAssertEqual(ReminderScheduleRules.alarmDates(dueAt: tomorrow, now: now, advanceEnabled: true, calendar: calendar), [tomorrow, tomorrow.addingTimeInterval(-3600)])
+        XCTAssertEqual(ReminderScheduleRules.alarmDates(dueAt: tomorrow, now: now, advanceEnabled: false, calendar: calendar), [tomorrow])
+        let soon = now.addingTimeInterval(1800)
+        XCTAssertEqual(ReminderScheduleRules.alarmDates(dueAt: soon, now: now, advanceEnabled: true, calendar: calendar), [soon])
+        let sameDay = now.addingTimeInterval(5400)
+        XCTAssertEqual(ReminderScheduleRules.alarmDates(dueAt: sameDay, now: now, advanceEnabled: true, calendar: calendar), [sameDay])
+    }
+
     func testMoscowTimeResolvesToTheSameAbsoluteInstantAsUTC() throws {
         let local = try ReminderScheduleRules.date(fromISO8601: "2027-01-02T20:00:00+03:00", now: now)
         let utc = try ReminderScheduleRules.date(fromISO8601: "2027-01-02T17:00:00Z", now: now)
         XCTAssertEqual(local, utc)
+        XCTAssertEqual(try ReminderScheduleRules.date(fromISO8601: "2027-01-02T20:00+03:00", now: now), utc)
     }
 
     func testFloatingLocalTimeAndDateOnlyCannotBeSilentlyScheduledInAnotherZone() {

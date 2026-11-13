@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 @MainActor
 enum AssistantToolExecutor {
@@ -28,6 +29,7 @@ enum AssistantToolExecutor {
         let title: String?
         let due_at: String?
         let reminder_id: String?
+        let advance: String?
     }
 
     private struct Output: Encodable {
@@ -39,6 +41,10 @@ enum AssistantToolExecutor {
         var reminders: [LocalReminder]?
         var localTime: String?
         var timeZone: String?
+        var deviceModel: String?
+        var systemVersion: String?
+        var weekday: String?
+        var advanceReminderEnabled: Bool?
     }
 
     static func execute(_ call: AssistantToolCall, userRequest: String,
@@ -48,6 +54,25 @@ enum AssistantToolExecutor {
             if call.name == "web_search" {
                 let reply = try await RealtimeSearchTool.execute(call, configuration: configuration, apiKey: apiKey)
                 return AssistantToolResult(output: try RealtimeSearchTool.output(reply), sources: reply.sources, usedWebSearch: true)
+            }
+            if call.name == "generate_image" {
+                return try await GeneratedImages.generate(call: call, configuration: configuration, apiKey: apiKey, scope: scope)
+            }
+            if call.name == "get_current_context" {
+                let formatter = ISO8601DateFormatter()
+                formatter.timeZone = .autoupdatingCurrent
+                let now = Date()
+                let weekday = DateFormatter()
+                weekday.locale = Locale(identifier: "ru_RU")
+                weekday.timeZone = .autoupdatingCurrent
+                weekday.dateFormat = "EEEE"
+                var machine = utsname()
+                uname(&machine)
+                let model = withUnsafeBytes(of: &machine.machine) { bytes in
+                    String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+                }
+                return try encode(Output(ok: true, localTime: formatter.string(from: now), timeZone: TimeZone.autoupdatingCurrent.identifier,
+                    deviceModel: model, systemVersion: UIDevice.current.systemVersion, weekday: weekday.string(from: now)))
             }
             guard call.arguments.utf8.count <= 16_384,
                   let data = call.arguments.data(using: .utf8),
@@ -63,7 +88,7 @@ enum AssistantToolExecutor {
             return try encode(result)
         } catch is CancellationError { throw CancellationError() }
         catch {
-            SessionLog.shared.record("personal.tool.failed", "tool=\(knownName(call.name))")
+            SessionLog.shared.record("personal.tool.failed", "tool=\(knownName(call.name)) \(SessionLog.describe(error))")
             return try encode(Output(ok: false, message: error.localizedDescription))
         }
     }
@@ -105,19 +130,26 @@ enum AssistantToolExecutor {
         let store = try personal.requireStore()
         guard let scheduler = personal.reminders else { throw PersonalDataError.unavailable }
         let saved: LocalReminder
+        let advance: Bool?
+        switch arguments.advance {
+        case nil, "default": advance = nil
+        case "on": advance = true
+        case "off": advance = false
+        default: throw PersonalDataError.invalidArguments
+        }
         switch arguments.action {
         case "create":
             let request = try authorized(.createReminder, request: userRequest, scope: scope)
             guard !PersonalRequestPolicy.requestsRepeatingReminder(request) else { throw PersonalDataError.repeatingReminder }
             guard let title = arguments.title, let dueAt = arguments.due_at else { throw PersonalDataError.invalidArguments }
-            saved = try await scheduler.create(title: title, dueAt: ReminderScheduleRules.date(fromISO8601: dueAt))
+            saved = try await scheduler.create(title: title, dueAt: ReminderScheduleRules.date(fromISO8601: dueAt), advance: advance)
             try completed(.createReminder, scope: scope)
         case "update":
             let request = try authorized(.changeReminder, request: userRequest, scope: scope)
             guard !PersonalRequestPolicy.requestsRepeatingReminder(request) else { throw PersonalDataError.repeatingReminder }
             guard let id = try optionalID(arguments.reminder_id), let existing = try store.getReminder(id: id) else { throw PersonalDataError.notFound }
             let date = try arguments.due_at.map { try ReminderScheduleRules.date(fromISO8601: $0) } ?? existing.dueAt
-            saved = try await scheduler.update(id: id, title: arguments.title ?? existing.title, dueAt: date)
+            saved = try await scheduler.update(id: id, title: arguments.title ?? existing.title, dueAt: date, advance: advance)
             try completed(.changeReminder, scope: scope)
         case "complete", "delete":
             _ = try authorized(.changeReminder, request: userRequest, scope: scope)
@@ -127,6 +159,7 @@ enum AssistantToolExecutor {
             try completed(.changeReminder, scope: scope)
             return Output(ok: true, message: arguments.action == "complete" ? "Напоминание выполнено." : "Напоминание удалено.")
         case "list":
+            try await scheduler.refresh()
             let records = try store.reminders(limit: 10_000)
                 .filter { $0.status != .completed && $0.dueAt > Date() }
             let formatter = ISO8601DateFormatter()
@@ -135,7 +168,11 @@ enum AssistantToolExecutor {
         default: throw PersonalDataError.invalidArguments
         }
         SessionLog.shared.record("personal.reminder.saved", "action=\(arguments.action)")
-        return Output(ok: true, reminder: saved)
+        let hasAdvance = scheduler.advanceAlarmEnabled(for: saved)
+        let notice = arguments.advance == "on" && hasAdvance == false
+            ? "Напоминание сохранено на указанное время. Сигнал за час не добавлен: до события осталось не больше часа."
+            : nil
+        return Output(ok: true, message: notice, reminder: saved, advanceReminderEnabled: hasAdvance)
     }
 
     private static func optionalID(_ value: String?) throws -> UUID? {
@@ -151,7 +188,7 @@ enum AssistantToolExecutor {
     }
 
     private static func knownName(_ name: String) -> String {
-        ["web_search", "manage_memory", "manage_reminders"].contains(name) ? name : "unknown"
+        ["web_search", "manage_memory", "manage_reminders", "get_current_context", "generate_image"].contains(name) ? name : "unknown"
     }
 
     private static func intent(scope: String) throws -> PersonalIntentTracker {

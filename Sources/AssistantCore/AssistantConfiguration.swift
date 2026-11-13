@@ -18,6 +18,7 @@ public struct AssistantConfiguration: Codable, Equatable, Sendable {
     public var realtimeVoice: String
     public var webSearchModel: String
     public var contextMessageCount: Int
+    public var imageModel: String
 
     public init(
         endpoint: String = "https://api.openai.com/v1",
@@ -27,8 +28,10 @@ public struct AssistantConfiguration: Codable, Equatable, Sendable {
         webSearchEnabled: Bool = false,
         realtimeVoice: String = "marin",
         webSearchModel: String = "gpt-6-luna",
-        contextMessageCount: Int = AssistantLimits.contextMessageDefault
+        contextMessageCount: Int = AssistantLimits.contextMessageDefault,
+        imageModel: String = "gpt-image-2.5-flare"
     ) {
+        self.imageModel = imageModel
         self.endpoint = endpoint
         self.model = model
         self.apiStyle = apiStyle
@@ -37,6 +40,14 @@ public struct AssistantConfiguration: Codable, Equatable, Sendable {
         self.realtimeVoice = realtimeVoice
         self.webSearchModel = webSearchModel
         self.contextMessageCount = AssistantLimits.normalizedContextMessageCount(contextMessageCount)
+    }
+
+    public var supportsImageGeneration: Bool {
+        guard let components = URLComponents(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
+              components.scheme?.lowercased() == "https", components.host?.lowercased() == "api.openai.com",
+              components.port == nil || components.port == 443, components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else { return false }
+        return true
     }
 
     public func validatedEndpoint() throws -> URL {
@@ -56,11 +67,12 @@ public struct AssistantConfiguration: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case endpoint, model, apiStyle, systemPrompt, webSearchEnabled, realtimeVoice, webSearchModel, contextMessageCount
+        case endpoint, model, apiStyle, systemPrompt, webSearchEnabled, realtimeVoice, webSearchModel, contextMessageCount, imageModel
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        imageModel = try values.decodeIfPresent(String.self, forKey: .imageModel) ?? "gpt-image-2.5-flare"
         endpoint = try values.decode(String.self, forKey: .endpoint)
         model = try values.decode(String.self, forKey: .model)
         apiStyle = try values.decode(AssistantAPIStyle.self, forKey: .apiStyle)
@@ -104,6 +116,7 @@ public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
     public var webSearchEnabled: Bool
     public var realtimeVoice: String
     public var webSearchModel: String
+    public var imageModel: String
 
     public init(
         id: UUID = UUID(),
@@ -114,8 +127,10 @@ public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
         systemPrompt: String? = nil,
         webSearchEnabled: Bool = false,
         realtimeVoice: String = "marin",
-        webSearchModel: String = "gpt-6-luna"
+        webSearchModel: String = "gpt-6-luna",
+        imageModel: String = "gpt-image-2.5-flare"
     ) {
+        self.imageModel = imageModel
         self.id = id
         self.name = name
         self.endpoint = endpoint
@@ -136,16 +151,18 @@ public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
             systemPrompt: systemPrompt,
             webSearchEnabled: webSearchEnabled,
             realtimeVoice: realtimeVoice,
-            webSearchModel: webSearchModel
+            webSearchModel: webSearchModel,
+            imageModel: imageModel
         )
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, endpoint, apiStyle, models, systemPrompt, promptPreset, customSystemPrompt, webSearchEnabled, realtimeVoice, webSearchModel
+        case id, name, endpoint, apiStyle, models, systemPrompt, promptPreset, customSystemPrompt, webSearchEnabled, realtimeVoice, webSearchModel, imageModel
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        imageModel = try values.decodeIfPresent(String.self, forKey: .imageModel) ?? "gpt-image-2.5-flare"
         id = try values.decode(UUID.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
         endpoint = try values.decode(String.self, forKey: .endpoint)
@@ -180,6 +197,7 @@ public struct AssistantProvider: Codable, Equatable, Identifiable, Sendable {
         try values.encode(webSearchEnabled, forKey: .webSearchEnabled)
         try values.encode(realtimeVoice, forKey: .realtimeVoice)
         try values.encode(webSearchModel, forKey: .webSearchModel)
+        try values.encode(imageModel, forKey: .imageModel)
     }
 }
 

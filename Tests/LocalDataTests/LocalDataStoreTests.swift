@@ -151,6 +151,8 @@ final class LocalDataStoreTests: XCTestCase, @unchecked Sendable {
             let stored = try store.upsertMessage(AssistantMessage(role: .user, text: "Текст\0после нуля"), scope: "provider")
             let fact = try store.upsertMemory(MemoryFact(text: "Люблю чай"))
             let reminder = try store.upsertReminder(LocalReminder(title: "Проверка", dueAt: Date(timeIntervalSince1970: 500)))
+            try store.setLocalState(Data("event-id".utf8), for: "eventkit." + reminder.id.uuidString)
+            try store.setLocalState(Data("intent".utf8), for: "intent.test")
             let reopened = try LocalDataStore(databaseURL: url)
             XCTAssertEqual(try reopened.getMessage(id: stored.id), stored)
             XCTAssertEqual(try reopened.getMessage(id: UUID()), nil)
@@ -160,6 +162,8 @@ final class LocalDataStoreTests: XCTestCase, @unchecked Sendable {
             XCTAssertNil(try store.newestCursor())
             XCTAssertEqual(try store.getMemory(id: fact.id), fact)
             XCTAssertEqual(try store.getReminder(id: reminder.id), reminder)
+            XCTAssertEqual(try store.localState(for: "eventkit." + reminder.id.uuidString), Data("event-id".utf8))
+            XCTAssertNil(try store.localState(for: "intent.test"))
             let next = try store.upsertMessage(AssistantMessage(role: .user, text: "После очистки"), scope: "provider")
             XCTAssertGreaterThan(next.sequence, stored.sequence)
         }

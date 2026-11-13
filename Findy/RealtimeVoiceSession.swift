@@ -230,6 +230,7 @@ final class RealtimeVoiceSession {
                 }
             case .audioDelta(let itemID, let contentIndex, let pcm16):
                 guard !interruptedItems.contains(itemID), !userSpeaking else { return }
+                WaitingMusicPlayer.shared.stop()
                 try output.append(pcm16, itemID: itemID, contentIndex: contentIndex)
                 if !pcm16.isEmpty { readinessCuePending = true }
                 if !firstOutputLogged {

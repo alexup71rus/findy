@@ -55,7 +55,7 @@ enum RealtimeTextReply {
         return try await withThrowingTaskGroup(of: AssistantReply.self) { group in
             group.addTask { try await conversation.run(history: Array(messages.dropLast()), text: last.text) }
             group.addTask {
-                try await Task.sleep(for: .seconds(60))
+                try await Task.sleep(for: .seconds(configuration.supportsImageGeneration ? 300 : 60))
                 throw AssistantClientError.requestTimedOut
             }
             defer { group.cancelAll() }

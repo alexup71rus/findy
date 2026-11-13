@@ -16,9 +16,26 @@ final class PersonalIntentTrackerTests: XCTestCase {
         XCTAssertTrue(first.contains("Завтра."))
         tracker.accept(id: UUID(), text: "В восемь вечера.", now: now.addingTimeInterval(10))
         XCTAssertNotNil(tracker.request(for: .createReminder, currentRequest: "В восемь вечера.", now: now.addingTimeInterval(10)))
-        tracker.accept(id: UUID(), text: "Хорошо.", now: now.addingTimeInterval(15))
-        XCTAssertNil(tracker.request(for: .createReminder, currentRequest: "Хорошо.", now: now.addingTimeInterval(15)))
-        XCTAssertFalse(tracker.hasPendingRequest(now: now.addingTimeInterval(15)))
+        tracker.accept(id: UUID(), text: "Дня, дня.", now: now.addingTimeInterval(15))
+        XCTAssertNotNil(tracker.request(for: .createReminder, currentRequest: "Дня, дня.", now: now.addingTimeInterval(15)))
+        tracker.accept(id: UUID(), text: "В тринадцать ноль ноль.", now: now.addingTimeInterval(20))
+        XCTAssertNotNil(tracker.request(for: .createReminder, currentRequest: "В тринадцать ноль ноль.", now: now.addingTimeInterval(20)))
+        tracker.accept(id: UUID(), text: "Хорошо.", now: now.addingTimeInterval(25))
+        XCTAssertNil(tracker.request(for: .createReminder, currentRequest: "Хорошо.", now: now.addingTimeInterval(25)))
+        XCTAssertFalse(tracker.hasPendingRequest(now: now.addingTimeInterval(25)))
+    }
+
+    func testNaturalSpokenReminderRequestSurvivesTheActualClarifications() {
+        var tracker = PersonalIntentTracker()
+        tracker.accept(id: UUID(), text: "А на его приложение попробую напоминание добавить какое-нибудь.", now: now)
+        for (offset, text) in ["Ну давай завтра в час стрижка у меня, барбершоп.", "Дня, дня.", "В тринадцать ноль ноль."].enumerated() {
+            let instant = now.addingTimeInterval(Double(offset + 1) * 5)
+            tracker.accept(id: UUID(), text: text, now: instant)
+            XCTAssertNotNil(tracker.request(for: .createReminder, currentRequest: text, now: instant))
+        }
+        tracker.didComplete(.createReminder)
+        tracker.accept(id: UUID(), text: "Расскажи другую историю.", now: now.addingTimeInterval(25))
+        XCTAssertNil(tracker.request(for: .createReminder, currentRequest: "Расскажи другую историю.", now: now.addingTimeInterval(25)))
     }
 
     func testSuccessfulActionDoesNotAuthorizeAnUnrelatedSubsequentTurn() {

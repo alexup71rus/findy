@@ -5,6 +5,20 @@ import AssistantCore
 import LocalData
 
 final class LocalStateTests: XCTestCase, @unchecked Sendable {
+    func testDeletingMessageRemovesOnlyItsImageMetadata() throws {
+        try withStore { store, _ in
+            let message = AssistantMessage(role: .assistant, text: "Изображение готово.")
+            let key = "image." + message.id.uuidString.lowercased()
+            try store.upsertMessage(message, scope: "test")
+            try store.setLocalState(Data("image.png".utf8), for: key)
+            try store.setLocalState(Data("other".utf8), for: "image.other")
+            try store.deleteMessage(id: message.id)
+            XCTAssertNil(try store.getMessage(id: message.id))
+            XCTAssertNil(try store.localState(for: key))
+            XCTAssertEqual(try store.localState(for: "image.other"), Data("other".utf8))
+        }
+    }
+
     func testBinaryStateRoundTripsEmbeddedNULsAndDistinguishesKeysExactly() throws {
         try withStore { store, _ in
             let value = Data([0, 1, 0, 255, 42, 0])

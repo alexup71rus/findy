@@ -27,7 +27,7 @@ final class VoiceTimeoutSettingsTests: XCTestCase, @unchecked Sendable {
     func testPresetTimeoutsAndDisabledTimeoutRoundTripIndependentlyOfProviders() async throws {
         try await MainActor.run {
             try withFixture { settings, defaults, keys in
-                for seconds in [5.0, 10, 15, 30, 60, 120, 0] {
+                for seconds in [5.0, 10, 15, 30, 0] {
                     settings.setSilenceTimeoutSeconds(seconds)
                     XCTAssertEqual(settings.silenceTimeoutSeconds, seconds)
                     XCTAssertEqual(defaults.double(forKey: "voice.silenceTimeout"), seconds)
@@ -50,8 +50,8 @@ final class VoiceTimeoutSettingsTests: XCTestCase, @unchecked Sendable {
                     (Double.leastNonzeroMagnitude, 5.0),
                     (4.9, 5.0),
                     (7.5, 7.5),
-                    (121.0, 120.0),
-                    (Double.greatestFiniteMagnitude, 120.0),
+                    (31.0, 30.0),
+                    (Double.greatestFiniteMagnitude, 30.0),
                     (0.0, 0.0)
                 ] {
                     settings.setSilenceTimeoutSeconds(input)
@@ -59,6 +59,19 @@ final class VoiceTimeoutSettingsTests: XCTestCase, @unchecked Sendable {
                     XCTAssertEqual(AssistantSettings(defaults: defaults, keyStore: keys).silenceTimeoutSeconds, expected)
                 }
                 XCTAssertEqual(keys.writeCount, 0)
+            }
+        }
+    }
+
+    func testLegacyLongTimeoutsMigrateToThirtySeconds() async throws {
+        try await MainActor.run {
+            try withFixture { _, defaults, keys in
+                for previous in [60.0, 120.0] {
+                    defaults.set(previous, forKey: "voice.silenceTimeout")
+                    let restored = AssistantSettings(defaults: defaults, keyStore: keys)
+                    XCTAssertEqual(restored.silenceTimeoutSeconds, 30)
+                    XCTAssertEqual(defaults.double(forKey: "voice.silenceTimeout"), 30)
+                }
             }
         }
     }

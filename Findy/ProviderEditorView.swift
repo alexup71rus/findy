@@ -44,6 +44,7 @@ struct ProviderEditorView: View {
                 credentialSection
                 modelsSection
                 if draft.apiStyle == .realtime { realtimeVoiceSection }
+                if draft.configuration(for: "validation").supportsImageGeneration { imageSection }
                 behaviorSection
                 connectionSection
             }
@@ -188,6 +189,22 @@ struct ProviderEditorView: View {
                 Text("Для этого формата нужна модель с поддержкой Realtime API.")
             }
         }
+        .disabled(editingDisabled)
+    }
+
+    private var imageSection: some View {
+        Section {
+            Picker("Модель изображений", selection: $draft.imageModel) {
+                Text("GPT Image 2.5 Flare").tag("gpt-image-2.5-flare")
+                Text("GPT Image 2.5 Sunburst").tag("gpt-image-2.5-sunburst")
+                Text("GPT Image 2").tag("gpt-image-2")
+                Text("GPT Image 1.5").tag("gpt-image-1.5")
+                if !["gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2", "gpt-image-1.5"].contains(draft.imageModel) {
+                    Text(draft.imageModel).tag(draft.imageModel)
+                }
+            }
+        } header: { Text("Изображения") }
+        footer: { Text("Создание изображений по запросу в чате оплачивается по тарифу OpenAI.") }
         .disabled(editingDisabled)
     }
 

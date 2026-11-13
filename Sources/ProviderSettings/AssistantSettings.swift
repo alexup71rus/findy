@@ -53,7 +53,8 @@ final class AssistantSettings: ObservableObject {
            CFGetTypeID(stored) != CFBooleanGetTypeID(),
            stored.doubleValue.isFinite,
            stored.doubleValue == 0 || (5.0...120.0).contains(stored.doubleValue) {
-            silenceTimeoutSeconds = stored.doubleValue
+            silenceTimeoutSeconds = stored.doubleValue == 0 ? 0 : min(30, stored.doubleValue)
+            if stored.doubleValue > 30 { defaults.set(30.0, forKey: "voice.silenceTimeout") }
         } else {
             silenceTimeoutSeconds = 5
         }
@@ -149,7 +150,8 @@ final class AssistantSettings: ObservableObject {
             webSearchEnabled: provider.webSearchEnabled,
             realtimeVoice: provider.realtimeVoice,
             webSearchModel: provider.webSearchModel,
-            contextMessageCount: contextMessageCount
+            contextMessageCount: contextMessageCount,
+            imageModel: provider.imageModel
         )
     }
 
@@ -260,7 +262,7 @@ final class AssistantSettings: ObservableObject {
 
     func setSilenceTimeoutSeconds(_ seconds: Double) {
         guard seconds.isFinite else { return }
-        silenceTimeoutSeconds = seconds == 0 ? 0 : min(120, max(5, seconds))
+        silenceTimeoutSeconds = seconds == 0 ? 0 : min(30, max(5, seconds))
         defaults.set(silenceTimeoutSeconds, forKey: "voice.silenceTimeout")
     }
 

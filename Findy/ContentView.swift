@@ -6,6 +6,8 @@ import UIKit
 @MainActor
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @ObservedObject private var session = VoiceSession.shared
     @ObservedObject private var settings = AssistantSettings.shared
     @ObservedObject private var timeline = ChatTimeline.shared
@@ -15,10 +17,12 @@ struct ContentView: View {
     @State private var showingSharingConsent = false
     @State private var showingOnboarding = false
     @State private var confirmingClearHistory = false
+    @State private var confirmingGitHub = false
     @State private var messageToDelete: UUID?
     @State private var historyActionError: String?
     @State private var configureAfterOnboarding = false
     @State private var draftMessage = ""
+    @State private var composerHeight: CGFloat = 90
     @State private var position = ScrollPosition(idType: UUID.self, edge: .bottom)
     @State private var metrics = ChatScrollMetrics()
     @State private var rowFrames: [UUID: CGRect] = [:]
@@ -90,154 +94,13 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-            ScrollView {
-                // The timeline is bounded to 120 rows. Measuring this bounded
-                // window avoids lazy estimated heights shifting the bottom and
-                // paging anchors as long messages and source chips appear.
-                VStack(alignment: .leading, spacing: 15) {
-                    if timeline.hasOlder {
-                        Button("Ранее") { paginate(.older) }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 40)
-                            .disabled(isPaging)
-                            .accessibilityIdentifier("chat-load-older")
-                    }
-                    ForEach(visibleRecords) { record in
-                        ConversationMessageView(message: record.message, canDelete: historyMutationAllowed) {
-                            messageToDelete = record.id
-                        }
-                            .containerRelativeFrame(.horizontal) { width, _ in max(0, width - 36) }
-                            .id(record.id)
-                            .background {
-                                GeometryReader { geometry in
-                                    Color.clear.preference(key: ChatRowFrames.self, value: [record.id: geometry.frame(in: .named("chatViewport"))])
-                                }
-                            }
-                    }
-                    if let reply = visibleStreamingReply {
-                        ConversationMessageView(message: reply)
-                            .containerRelativeFrame(.horizontal) { width, _ in max(0, width - 36) }
-                            .id(reply.id)
-                    }
-                    if timeline.isAtLatest && (session.phase == .thinking || session.isSendingText)
-                        && visibleStreamingReply == nil {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Готовлю ответ…").font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                        .accessibilityElement(children: .combine)
-                    }
-                    if timeline.hasNewer {
-                        Button("Позже") { paginate(.newer) }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 40)
-                            .disabled(isPaging)
-                            .accessibilityIdentifier("chat-load-newer")
-                    }
-                    Color.clear.frame(height: 1)
-                }
-                .scrollTargetLayout()
-                .padding(.horizontal, 18)
-                .padding(.top, 12)
-                .padding(.bottom, 14)
-            }
-            .accessibilityIdentifier("chat-history")
-            .coordinateSpace(name: "chatViewport")
-            .scrollPosition($position)
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .scrollDismissesKeyboard(.interactively)
-            .onPreferenceChange(ChatRowFrames.self) { rowFrames = $0 }
-            .onScrollPhaseChange { _, next in
-                scrollPhase = next
-                if next == .idle && followsLatest && timeline.isAtLatest { scrollToBottom() }
-            }
-            .onScrollGeometryChange(for: ChatScrollMetrics.self) { geometry in
-                return ChatScrollMetrics(
-                    offset: geometry.contentOffset.y + geometry.contentInsets.top,
-                    distanceToBottom: max(0, geometry.contentSize.height - geometry.visibleRect.maxY),
-                    viewportHeight: geometry.containerSize.height,
-                    topInset: geometry.contentInsets.top,
-                    bottomInset: geometry.contentInsets.bottom
-                )
-            } action: { old, new in
-                metrics = new
-                guard !isPaging else { return }
-                let userScrolling = scrollPhase == .interacting || scrollPhase == .decelerating
-                if !userScrolling && followsLatest && timeline.isAtLatest &&
-                    (old.viewportHeight != new.viewportHeight || old.topInset != new.topInset || old.bottomInset != new.bottomInset) {
-                    scrollToBottom()
-                }
-                if userScrolling {
-                    setFollowing(new.distanceToBottom < 60 && timeline.isAtLatest)
-                    if new.offset < 220 && new.offset < old.offset - 0.5 && timeline.hasOlder { paginate(.older) }
-                    else if new.distanceToBottom < 220 && new.offset > old.offset + 0.5 && timeline.hasNewer { paginate(.newer) }
-                }
-            }
-            .onChange(of: timeline.records) { _, _ in
-                if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
-            }
-            .onChange(of: session.streamingReply?.text) { _, _ in
-                if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
-            }
-            .onChange(of: session.isSendingText) { _, _ in
-                if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if !followsLatest || timeline.hasNewer {
-                    Button(action: jumpToLatest) {
-                        Image(systemName: "arrow.down")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 44, height: 44)
-                            .background(.regularMaterial, in: Circle())
-                            .overlay { Circle().strokeBorder(.quaternary, lineWidth: 1) }
-                    }
-                    .buttonStyle(.plain)
-                    .padding(14)
-                    .accessibilityLabel("К последним сообщениям")
-                    .accessibilityIdentifier("chat-jump-latest")
-                }
-            }
-            .overlay {
-                if timeline.totalCount == 0 && session.streamingReply == nil && !voiceComposerActive {
-                    emptyState.padding(.horizontal, 24)
-                }
-            }
-            .background(Color(.systemBackground))
-            composer
-            }
+            conversation
             .navigationTitle("Findy")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button("Память", systemImage: "brain") { page = .memory }
-                        Button("Напоминания", systemImage: "bell") { navigation.openReminder(id: nil) }
-                        Button("Настройки", systemImage: "gearshape") { page = .settings }
-                    } label: {
-                        Label("Меню Findy", systemImage: "ellipsis.circle")
-                    }
-                    .accessibilityIdentifier("findy-menu")
-                }
-                ToolbarItem(placement: .principal) {
-                    HStack(spacing: 6) {
-                        FindyMark().foregroundStyle(Color.accentColor)
-                            .frame(width: 31, height: 15)
-                            .accessibilityHidden(true)
-                        Text("Findy").font(.headline)
-                    }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { confirmingClearHistory = true } label: {
-                        Image(systemName: "trash")
-                    }
-                    .disabled(!historyMutationAllowed || timeline.totalCount == 0)
-                    .accessibilityLabel("Очистить чат")
-                    .accessibilityIdentifier("chat-clear")
-                }
+            .toolbar(.hidden, for: .navigationBar)
+            .alert("Вы будете перенаправлены на GitHub приложения", isPresented: $confirmingGitHub) {
+                Button("Отмена", role: .cancel) { }
+                Button("Открыть GitHub") { openURL(URL(string: "https://github.com/alexup71rus/findy")!) }
             }
             .alert("Очистить чат?", isPresented: $confirmingClearHistory) {
                 Button("Отмена", role: .cancel) { }
@@ -326,6 +189,215 @@ struct ContentView: View {
                 if show { composerFocused = false; page = .reminders }
             }
         }
+        .overlay {
+            if voiceComposerActive {
+                VoiceGlowBorder(animated: !reduceMotion && scenePhase == .active && page == nil && !showingOnboarding)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: voiceComposerActive)
+    }
+
+    private var conversation: some View {
+            ScrollView {
+                // The timeline is bounded to 120 rows. Measuring this bounded
+                // window avoids lazy estimated heights shifting the bottom and
+                // paging anchors as long messages and source chips appear.
+                VStack(alignment: .leading, spacing: 15) {
+                    if timeline.hasOlder {
+                        Button("Ранее") { paginate(.older) }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .disabled(isPaging)
+                            .accessibilityIdentifier("chat-load-older")
+                    }
+                    ForEach(visibleRecords) { record in
+                        ConversationMessageView(message: record.message, canDelete: historyMutationAllowed) {
+                            messageToDelete = record.id
+                        }
+                            .containerRelativeFrame(.horizontal) { width, _ in max(0, width - 36) }
+                            .id(record.id)
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(key: ChatRowFrames.self, value: [record.id: geometry.frame(in: .named("chatViewport"))])
+                                }
+                            }
+                    }
+                    if let reply = visibleStreamingReply {
+                        ConversationMessageView(message: reply)
+                            .containerRelativeFrame(.horizontal) { width, _ in max(0, width - 36) }
+                            .id(reply.id)
+                    }
+                    if timeline.isAtLatest && (session.phase == .thinking || session.isSendingText)
+                        && visibleStreamingReply == nil {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Готовлю ответ…").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                        .accessibilityElement(children: .combine)
+                    }
+                    if timeline.hasNewer {
+                        Button("Позже") { paginate(.newer) }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .disabled(isPaging)
+                            .accessibilityIdentifier("chat-load-newer")
+                    }
+                }
+                .scrollTargetLayout()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            }
+            .contentMargins(.top, 56, for: .scrollContent)
+            .contentMargins(.top, 56, for: .scrollIndicators)
+            .modifier(FindySoftScrollEdges())
+            .contentMargins(.bottom, composerHeight, for: .scrollContent)
+            .contentMargins(.bottom, composerHeight, for: .scrollIndicators)
+            .accessibilityIdentifier("chat-history")
+            .coordinateSpace(name: "chatViewport")
+            .scrollPosition($position)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .scrollDismissesKeyboard(.interactively)
+            .onPreferenceChange(ChatRowFrames.self) { rowFrames = $0 }
+            .onScrollPhaseChange { _, next in
+                scrollPhase = next
+                if next == .idle && followsLatest && timeline.isAtLatest { scrollToBottom() }
+            }
+            .onScrollGeometryChange(for: ChatScrollMetrics.self) { geometry in
+                return ChatScrollMetrics(
+                    offset: geometry.contentOffset.y + geometry.contentInsets.top,
+                    distanceToBottom: max(0, geometry.contentSize.height - geometry.visibleRect.maxY),
+                    viewportHeight: geometry.containerSize.height,
+                    topInset: geometry.contentInsets.top,
+                    bottomInset: geometry.contentInsets.bottom
+                )
+            } action: { old, new in
+                metrics = new
+                guard !isPaging else { return }
+                let userScrolling = scrollPhase == .interacting || scrollPhase == .decelerating
+                if !userScrolling && followsLatest && timeline.isAtLatest &&
+                    (old.viewportHeight != new.viewportHeight || old.topInset != new.topInset || old.bottomInset != new.bottomInset) {
+                    scrollToBottom()
+                }
+                if userScrolling {
+                    setFollowing(new.distanceToBottom < 60 && timeline.isAtLatest)
+                    if new.offset < 220 && new.offset < old.offset - 0.5 && timeline.hasOlder { paginate(.older) }
+                    else if new.distanceToBottom < 220 && new.offset > old.offset + 0.5 && timeline.hasNewer { paginate(.newer) }
+                }
+            }
+            .onChange(of: timeline.records) { _, _ in
+                if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
+            }
+            .onChange(of: session.streamingReply?.text) { _, _ in
+                if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
+            }
+            .onChange(of: session.isSendingText) { _, _ in
+                if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
+            }
+            .background(Color(.systemBackground))
+            .overlay(alignment: .top) {
+                ChatEdgeFade(top: true)
+                    .frame(height: 150)
+                    .ignoresSafeArea(.container, edges: .top)
+            }
+            .overlay {
+                GeometryReader { geometry in
+                    let bottom = geometry.safeAreaInsets.bottom
+                    let height = composerHeight + 40 + bottom
+                    ChatEdgeFade(top: false)
+                        .frame(width: geometry.size.width, height: height)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height + bottom - height / 2)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !followsLatest || timeline.hasNewer {
+                    Button(action: jumpToLatest) {
+                        Image(systemName: "arrow.down")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                            .background(.regularMaterial, in: Circle())
+                            .overlay { Circle().strokeBorder(.quaternary, lineWidth: 1) }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(14)
+                    .padding(.bottom, composerHeight)
+                    .accessibilityLabel("К последним сообщениям")
+                    .accessibilityIdentifier("chat-jump-latest")
+                }
+            }
+            .overlay {
+                if timeline.totalCount == 0 && session.streamingReply == nil && !voiceComposerActive {
+                    emptyState.padding(.horizontal, 24)
+                }
+            }
+            .overlay(alignment: .top) { chatHeader }
+            .overlay(alignment: .bottom) {
+                composer
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        composerHeight = height
+                    }
+            }
+    }
+
+    private var chatHeader: some View {
+        HStack(alignment: .top) {
+            Button { confirmingGitHub = true } label: {
+                HStack(spacing: 7) {
+                    FindyMark()
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 28, height: 16)
+                    Text("Findy").font(.headline).foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 44)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .findyComposerGlass(in: Capsule(), interactive: true)
+            .accessibilityLabel("GitHub приложения Findy")
+            .accessibilityIdentifier("findy-github")
+            Spacer()
+            HStack(spacing: 0) {
+                Button { confirmingClearHistory = true } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 21, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!historyMutationAllowed || timeline.totalCount == 0)
+                .accessibilityLabel("Новый чат")
+                .accessibilityIdentifier("chat-clear")
+                Menu {
+                    Button("Память", systemImage: "brain") { page = .memory }
+                    Button("Напоминания", systemImage: "bell") { navigation.openReminder(id: nil) }
+                    Button("Настройки", systemImage: "gearshape") { page = .settings }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 21, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Меню Findy")
+                .accessibilityIdentifier("findy-menu")
+            }
+            .padding(.horizontal, 4)
+            .findyComposerGlass(in: Capsule(), interactive: true)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("chat-header-actions")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
     }
 
     private var emptyState: some View {
@@ -459,7 +531,8 @@ struct ContentView: View {
                     .padding(.bottom, 1)
                 }
             }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: draftMessage.isEmpty)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: draftMessage.isEmpty)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: voiceComposerActive)
         }
         .padding(.horizontal, 14)
         .padding(.top, 9)
@@ -498,7 +571,7 @@ struct ContentView: View {
 
     private func paginate(_ direction: ChatPageDirection) {
         guard !isPaging, !timeline.isLoading else { return }
-        let visible = rowFrames.filter { $0.value.maxY > 0 && $0.value.minY < metrics.viewportHeight }.sorted { $0.value.minY < $1.value.minY }
+        let visible = rowFrames.filter { $0.value.maxY > 0 && $0.value.minY < metrics.viewportHeight - composerHeight }.sorted { $0.value.minY < $1.value.minY }
         let visibleAnchor = direction == .older ? visible.first : visible.last
         let remembered = visibleAnchor.map { ChatVisibleAnchor(id: $0.key, minY: $0.value.minY) }
         let token = UUID()
@@ -617,6 +690,7 @@ private struct ConversationMessageView: View {
                     .lineSpacing(3)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                GeneratedImageView(messageID: message.id)
                 if !message.sources.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 7) {
@@ -650,5 +724,73 @@ private struct ConversationMessageView: View {
             if !isUser { Spacer(minLength: 5) }
         }
         .padding(.vertical, isUser ? 0 : 3)
+    }
+}
+
+private struct VoiceGlowBorder: View {
+    let animated: Bool
+    private let colors: [Color] = [.cyan, .blue, .purple, .pink, .orange, .cyan]
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !animated)) { timeline in
+            GeometryReader { geometry in
+                // iOS exposes no public hardware corner radius. Scale the continuous
+                // curve with the short screen edge so portrait and landscape agree.
+                let radius = min(geometry.size.width, geometry.size.height) * 0.14
+                let angle = animated ? timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 12) * 30 : 0
+                let gradient = AngularGradient(colors: colors, center: .center, angle: .degrees(angle))
+                ZStack {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .strokeBorder(gradient, lineWidth: 10)
+                        .blur(radius: 12)
+                        .opacity(0.12)
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .strokeBorder(gradient, lineWidth: 4)
+                        .blur(radius: 4)
+                        .opacity(0.2)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Light mode uses masked public Material. Dark mode keeps a pure black fade
+/// so the material tint cannot lift the black canvas to gray.
+private struct ChatEdgeFade: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let top: Bool
+    var body: some View {
+        ZStack {
+            if colorScheme != .dark {
+                Rectangle()
+                    .fill(.regularMaterial)
+                    .mask {
+                        LinearGradient(stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.35),
+                            .init(color: .clear, location: 1)
+                        ], startPoint: top ? .top : .bottom, endPoint: top ? .bottom : .top)
+                    }
+            }
+            LinearGradient(stops: [
+                .init(color: colorScheme == .dark ? .black : Color(.systemBackground), location: 0),
+                .init(color: (colorScheme == .dark ? Color.black : Color(.systemBackground)).opacity(colorScheme == .dark ? 0.52 : 0.6), location: 0.25),
+                .init(color: .clear, location: 1)
+            ], startPoint: top ? .top : .bottom, endPoint: top ? .bottom : .top)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct FindySoftScrollEdges: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        } else {
+            content
+        }
     }
 }

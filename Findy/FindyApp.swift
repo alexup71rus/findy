@@ -22,6 +22,9 @@ struct FindyApp: App {
             ContentView()
                 .task {
                     #if DEBUG
+                    #if targetEnvironment(simulator)
+                    await ReminderScheduler.runNativeSmokeIfRequested()
+                    #endif
                     await DebugRealtimeProbe.runMicrophoneGraphIfRequested()
                     await DebugRealtimeProbe.runIfRequested()
                     #endif

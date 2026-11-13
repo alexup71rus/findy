@@ -41,7 +41,20 @@ private struct ReminderListView: View {
     var body: some View {
         ScrollViewReader { proxy in
             List {
-                if hasRefreshed && (!scheduler.canSendNotifications || !scheduler.alertsEnabled) { permissionSection }
+                if hasRefreshed && (scheduler.usesNativeReminders ? !scheduler.hasNativeAccess : (!scheduler.canSendNotifications || !scheduler.alertsEnabled)) { permissionSection }
+                if scheduler.usesNativeReminders {
+                    Section {
+                        Toggle("Напоминать также за час", isOn: $scheduler.advanceReminderEnabled)
+                    } footer: { Text("Новые напоминания сохраняются в приложении «Напоминания», которое показывает уведомления. Сигнал за час добавляется, если дата наступит не сегодня и до неё больше часа. Основной сигнал — в указанное время.") }
+                }
+                if scheduler.usesNativeReminders && scheduler.hasBlockedLegacyReminders && !scheduler.canSendNotifications {
+                    Section {
+                        Button("Разрешить уведомления для старых напоминаний") {
+                            run { try await scheduler.requestLegacyPermission(); try await scheduler.refresh() }
+                        }
+                        Button("Настройки уведомлений Findy") { scheduler.openLegacyNotificationSettings() }
+                    } footer: { Text("Старые напоминания Findy используют собственные уведомления. После разрешения выберите «Запланировать» у нужной записи.") }
+                }
                 if let lastError = scheduler.lastError {
                     Section { Text(lastError).foregroundStyle(.red) }
                 }
@@ -107,17 +120,17 @@ private struct ReminderListView: View {
 
     private var permissionSection: some View {
         Section {
-            Label(scheduler.canSendNotifications ? "Баннеры Findy выключены" : "Уведомления не разрешены", systemImage: "bell.slash")
+            Label(scheduler.usesNativeReminders ? "Нет доступа к напоминаниям" : (scheduler.canSendNotifications ? "Баннеры Findy выключены" : "Уведомления не разрешены"), systemImage: "bell.slash")
                 .font(.subheadline.weight(.medium))
-            if scheduler.authorizationStatus == .notDetermined {
-                Button("Разрешить уведомления") {
+            if scheduler.usesNativeReminders ? scheduler.nativeAuthorization == .notDetermined : scheduler.authorizationStatus == .notDetermined {
+                Button(scheduler.usesNativeReminders ? "Разрешить доступ" : "Разрешить уведомления") {
                     run {
                         try await scheduler.requestPermission()
                         try await scheduler.refresh()
                     }
                 }
             } else {
-                Button("Открыть настройки уведомлений") { scheduler.openSettings() }
+                Button("Открыть настройки") { scheduler.openSettings() }
             }
         } footer: {
             if scheduler.reminders.contains(where: { $0.status == .blocked && $0.dueAt > Date() }) {
@@ -222,6 +235,7 @@ private struct ReminderEditorView: View {
     let reminder: LocalReminder?
     @State private var title: String
     @State private var dueAt: Date
+    @State private var advance: Bool
     @State private var isSaving = false
     @State private var error = ""
     @State private var showingError = false
@@ -232,6 +246,7 @@ private struct ReminderEditorView: View {
         self.reminder = reminder
         _title = State(initialValue: reminder?.title ?? "")
         _dueAt = State(initialValue: reminder?.dueAt ?? Date().addingTimeInterval(3_600))
+        _advance = State(initialValue: reminder.flatMap { scheduler.advanceAlarmEnabled(for: $0) } ?? scheduler.advanceReminderEnabled)
     }
 
     var body: some View {
@@ -242,6 +257,12 @@ private struct ReminderEditorView: View {
                         .lineLimit(1...4)
                         .textInputAutocapitalization(.sentences)
                     DatePicker("Когда", selection: $dueAt, in: earliest..., displayedComponents: [.date, .hourAndMinute])
+                    if scheduler.usesNativeReminders && (reminder == nil || scheduler.advanceAlarmEnabled(for: reminder!) != nil) {
+                        Toggle("Также за час", isOn: $advance)
+                        if advance && dueAt.timeIntervalSinceNow <= 3600 {
+                            Text("Для сигнала за час до события должно оставаться больше часа.").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
                 } footer: {
                     if reminder?.status == .completed || (reminder?.dueAt ?? .distantFuture) <= Date() {
                         Text("При сохранении напоминание будет запланировано заново на выбранное время.")
@@ -273,8 +294,8 @@ private struct ReminderEditorView: View {
         isSaving = true
         Task {
             do {
-                if let reminder { _ = try await scheduler.update(id: reminder.id, title: title, dueAt: dueAt) }
-                else { _ = try await scheduler.create(title: title, dueAt: dueAt) }
+                if let reminder { _ = try await scheduler.update(id: reminder.id, title: title, dueAt: dueAt, advance: advance) }
+                else { _ = try await scheduler.create(title: title, dueAt: dueAt, advance: advance) }
                 dismiss()
             } catch { self.error = error.localizedDescription; showingError = true }
             isSaving = false

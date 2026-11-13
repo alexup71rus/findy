@@ -373,3 +373,22 @@ final class RealtimeClientTests: XCTestCase {
         ])).isEmpty)
     }
 }
+
+final class ImageSettingsTests: XCTestCase {
+    func testImageModelPersistsAndOpenAIOriginIsStrict() throws {
+        var provider = AssistantProvider(name: "OpenAI", endpoint: "https://api.openai.com/v1", models: ["chat"])
+        provider.imageModel = "gpt-image-2"
+        let restored = try JSONDecoder().decode(AssistantProvider.self, from: JSONEncoder().encode(provider))
+        XCTAssertEqual(restored.configuration(for: "chat").imageModel, "gpt-image-2")
+        XCTAssertTrue(restored.configuration(for: "chat").supportsImageGeneration)
+        for endpoint in ["http://api.openai.com/v1", "https://api.openai.com.evil.test/v1", "https://api.openai.com:444/v1", "https://user@api.openai.com/v1"] {
+            provider.endpoint = endpoint
+            XCTAssertFalse(provider.configuration(for: "chat").supportsImageGeneration)
+        }
+    }
+    func testLegacyProviderGetsDefaultImageModel() throws {
+        let json = #"{"id":"00000000-0000-0000-0000-000000000001","name":"OpenAI","endpoint":"https://api.openai.com/v1","apiStyle":"responses","models":["chat"]}"#
+        let provider = try JSONDecoder().decode(AssistantProvider.self, from: Data(json.utf8))
+        XCTAssertEqual(provider.imageModel, "gpt-image-2.5-flare")
+    }
+}

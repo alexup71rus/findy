@@ -6,7 +6,6 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var settings = AssistantSettings.shared
     @ObservedObject private var session = VoiceSession.shared
-    @ObservedObject private var voiceCatalog = SpeechVoiceCatalog.shared
     @State private var expandedProviders = Set<UUID>()
     @State private var editingProvider: AssistantProvider?
     @State private var deletingProvider: AssistantProvider?
@@ -23,28 +22,33 @@ struct SettingsView: View {
             List {
                 providersSection
                 systemPromptSection
-                contextSection
-                audioSection
-                voiceSessionSection
-                Section("Siri") {
+                Section {
+                    NavigationLink {
+                        VoiceSettingsView()
+                    } label: {
+                        Label("Голос и звуки", systemImage: "waveform")
+                    }
+                    .accessibilityIdentifier("voice-settings")
+                }
+                Section("Siri и помощь") {
                     AddChatShortcutButton(accessibilityIdentifier: "findy-shortcuts-link")
                     NavigationLink {
                         SiriHelpView()
                     } label: {
                         Label("Siri и AirPods", systemImage: "airpods")
                     }
-                }
-                Section {
                     Button {
                         showingGuide = true
                     } label: {
                         Label("Как пользоваться", systemImage: "questionmark.circle")
                     }
                     .accessibilityIdentifier("settings-guide")
+                }
+                Section {
                     NavigationLink {
                         AdvancedSettingsView()
                     } label: {
-                        Label("Дополнительно", systemImage: "ellipsis.circle")
+                        Label("Данные и доступ", systemImage: "hand.raised")
                     }
                 }
             }
@@ -209,13 +213,6 @@ struct SettingsView: View {
                     .disabled(true)
                     .accessibilityIdentifier("system-prompt-settings")
             }
-        } footer: {
-            Text("Для выбранного провайдера")
-        }
-    }
-
-    private var contextSection: some View {
-        Section {
             Picker("Сообщений в контексте", selection: Binding(
                 get: { settings.contextMessageCount },
                 set: { if !isBusy { settings.setContextMessageCount($0) } }
@@ -230,59 +227,9 @@ struct SettingsView: View {
             .disabled(isBusy)
             .accessibilityIdentifier("context-message-count")
         } header: {
-            Text("Контекст")
+            Text("Помощник")
         } footer: {
-            Text("Последние сообщения для ответа модели. Вся история остаётся на iPhone.")
-        }
-    }
-
-    private var audioSection: some View {
-        Section {
-            NavigationLink {
-                SpeechSettingsView()
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("Озвучивание", systemImage: "speaker.wave.2")
-                    Text(usesProviderVoice ? "Провайдер · \(OpenAIRealtimeVoiceOptions.title(for: settings.configuration.realtimeVoice))" : "iPhone · \(voiceCatalog.summary(settings.speechVoiceIdentifier))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Toggle("Только Bluetooth-микрофон", isOn: $session.requireBluetooth)
-                .disabled(session.isRunning || session.isSendingText)
-            Toggle("Звуковые сигналы", isOn: $session.soundCuesEnabled)
-                .disabled(session.isRunning || session.isSendingText)
-        } header: {
-            Text("Аудио")
-        } footer: {
-            Text("Если выключено, можно использовать встроенный микрофон iPhone.")
-            if usesProviderVoice {
-                Text("Аудио передаётся провайдеру и оплачивается по тарифу выбранной модели.")
-            }
-        }
-    }
-
-    private var voiceSessionSection: some View {
-        Section {
-            Picker("Завершать после тишины", selection: Binding(
-                get: { settings.silenceTimeoutSeconds },
-                set: { settings.setSilenceTimeoutSeconds($0) }
-            )) {
-                ForEach([5.0, 10, 15, 30, 60, 120], id: \.self) { seconds in
-                    Text("\(Int(seconds)) секунд").tag(seconds)
-                }
-                Text("Не завершать автоматически").tag(0.0)
-                if settings.silenceTimeoutSeconds > 0,
-                   ![5.0, 10, 15, 30, 60, 120].contains(settings.silenceTimeoutSeconds) {
-                    Text("\(settings.silenceTimeoutSeconds.formatted(.number.precision(.fractionLength(0...1)))) секунд")
-                        .tag(settings.silenceTimeoutSeconds)
-                }
-            }
-            .disabled(session.isRunning || session.isSendingText)
-        } header: {
-            Text("Голосовая сессия")
-        } footer: {
-            Text("Применяется к следующему голосовому разговору.")
+            Text("В контекст ответа попадают последние сообщения. Вся история остаётся на iPhone.")
         }
     }
 
@@ -301,6 +248,49 @@ struct SettingsView: View {
             actionError = error.localizedDescription
             showingError = true
         }
+    }
+}
+
+@MainActor
+private struct VoiceSettingsView: View {
+    @ObservedObject private var settings = AssistantSettings.shared
+    @ObservedObject private var session = VoiceSession.shared
+    @ObservedObject private var catalog = SpeechVoiceCatalog.shared
+    private var isBusy: Bool { session.isRunning || session.isSendingText || session.phase != .idle }
+
+    var body: some View {
+        List {
+            Section {
+                NavigationLink {
+                    SpeechSettingsView()
+                } label: {
+                    LabeledContent("Озвучивание", value: settings.usesProviderVoice
+                        ? OpenAIRealtimeVoiceOptions.title(for: settings.configuration.realtimeVoice)
+                        : catalog.summary(settings.speechVoiceIdentifier))
+                }
+                NavigationLink("Музыка ожидания") { WaitingMusicSettingsView() }
+                Toggle("Звуковые сигналы", isOn: $session.soundCuesEnabled)
+                    .disabled(isBusy)
+            }
+            Section {
+                Picker("Завершать после тишины", selection: Binding(
+                    get: { settings.silenceTimeoutSeconds },
+                    set: { if !isBusy { settings.setSilenceTimeoutSeconds($0) } }
+                )) {
+                    ForEach([5.0, 10, 15, 30], id: \.self) { seconds in
+                        Text("\(Int(seconds)) секунд").tag(seconds)
+                    }
+                    Text("Не завершать автоматически").tag(0.0)
+                }
+                .pickerStyle(.navigationLink)
+                .disabled(isBusy)
+                .accessibilityIdentifier("voice-silence-timeout")
+            } footer: {
+                Text("Применяется к следующему голосовому разговору.")
+            }
+        }
+        .navigationTitle("Голос и звуки")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -359,7 +349,7 @@ private struct AdvancedSettingsView: View {
                 Text("Findy \(version) (\(build))")
             }
         }
-        .navigationTitle("Дополнительно")
+        .navigationTitle("Данные и доступ")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Отозвать разрешение на передачу данных?", isPresented: $confirmingRevoke, titleVisibility: .visible) {
             Button("Отозвать разрешение", role: .destructive) {

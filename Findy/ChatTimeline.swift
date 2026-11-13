@@ -95,7 +95,9 @@ final class ChatTimeline: ObservableObject {
     }
 
     func deleteHistory() throws {
-        try PersonalData.shared.requireStore().clearHistory()
+        let store = try PersonalData.shared.requireStore()
+        try store.clearHistory()
+        try GeneratedImages.removeAllFiles(store: store)
         AssistantToolExecutor.clearAllIntents()
         loadLatest()
     }
@@ -103,7 +105,9 @@ final class ChatTimeline: ObservableObject {
     func deleteMessage(id: UUID) throws {
         let store = try PersonalData.shared.requireStore()
         let sequence = records.first(where: { $0.id == id })?.sequence
+        let imageURL = GeneratedImages.url(for: id)
         try store.deleteMessage(id: id)
+        if let imageURL { try? FileManager.default.removeItem(at: imageURL) }
         AssistantToolExecutor.clearAllIntents()
         records.removeAll { $0.id == id }
         if records.isEmpty, let sequence {

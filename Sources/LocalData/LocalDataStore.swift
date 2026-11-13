@@ -148,6 +148,7 @@ public final class LocalDataStore: @unchecked Sendable {
         try withDatabase { db in
             try Self.transaction(db) {
                 try Self.execute(db, "DELETE FROM messages WHERE id = ?", [.text(id.uuidString.lowercased())])
+                try Self.execute(db, "DELETE FROM local_state WHERE key = ?", [.text("image." + id.uuidString.lowercased())])
                 try Self.execute(db, "DELETE FROM local_state WHERE key LIKE 'intent.%'")
             }
         }
@@ -187,7 +188,7 @@ public final class LocalDataStore: @unchecked Sendable {
             try Self.transaction(db) {
                 try Self.execute(db, "DELETE FROM messages")
                 try Self.execute(db, "DELETE FROM context_boundaries")
-                try Self.execute(db, "DELETE FROM local_state")
+                try Self.execute(db, "DELETE FROM local_state WHERE key NOT LIKE 'eventkit.%'")
             }
         }
     }

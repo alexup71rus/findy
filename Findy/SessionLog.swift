@@ -91,7 +91,7 @@ enum DiagnosticLogPrivacy {
     private static let enumValues: [String: Set<String>] = [
         "state": ["active", "inactive", "background", "unknown"], "phase": ["active", "inactive", "background"],
         "source": ["UI", "AppIntent"], "intent": ["StartChatIntent"], "engine": ["realtime"],
-        "api": ["responses", "chatCompletions", "realtime"], "tool": ["web_search", "manage_memory", "manage_reminders", "unknown"], "name": ["web_search", "manage_memory", "manage_reminders", "unknown"],
+        "api": ["responses", "chatCompletions", "realtime"], "tool": ["web_search", "manage_memory", "manage_reminders", "get_current_context", "generate_image", "unknown"], "name": ["web_search", "manage_memory", "manage_reminders", "get_current_context", "generate_image", "unknown"],
         "action": ["create", "update", "complete", "delete"], "status": ["completed", "failed", "cancelled", "incomplete"],
         "value": ["active", "dismissed", "ended", "stale"],
         "input": ["BluetoothHFP", "MicrophoneBuiltIn", "HeadsetMic", "USBAudio"],
