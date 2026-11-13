@@ -25,6 +25,8 @@ enum AssistantToolExecutor {
         let action: String
         let text: String?
         let memory_id: String?
+        let source_quote: String?
+        let merge_with_id: String?
         let query: String?
         let title: String?
         let due_at: String?
@@ -32,11 +34,20 @@ enum AssistantToolExecutor {
         let advance: String?
     }
 
+    private struct MemorySnapshot: Encodable {
+        let id: UUID
+        let text: String
+        init(_ fact: MemoryFact, clipped: Bool = false) {
+            id = fact.id
+            text = clipped ? AssistantLimits.clipped(fact.text, to: AssistantLimits.memoryNoteCharacters) : fact.text
+        }
+    }
+
     private struct Output: Encodable {
         var ok: Bool
         var message: String?
-        var memory: MemoryFact?
-        var memories: [MemoryFact]?
+        var memory: MemorySnapshot?
+        var memories: [MemorySnapshot]?
         var reminder: LocalReminder?
         var reminders: [LocalReminder]?
         var localTime: String?
@@ -44,6 +55,8 @@ enum AssistantToolExecutor {
         var deviceModel: String?
         var systemVersion: String?
         var weekday: String?
+        var memoryTotal: Int?
+        var hasMore: Bool?
         var advanceReminderEnabled: Bool?
     }
 
@@ -101,10 +114,27 @@ enum AssistantToolExecutor {
             _ = try authorized(.saveMemory, request: userRequest, scope: scope)
             guard let text = arguments.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PersonalDataError.invalidArguments }
             let id = try optionalID(arguments.memory_id)
-            let fact = try personal.saveMemory(text: text, replacing: id)
+            let result: (memory: MemoryFact, evicted: Bool)
+            if let id { result = (try personal.saveMemory(text: text, replacing: id), false) }
+            else { result = try personal.saveNewMemoryEvictingOldestIfFull(text: text) }
             try completed(.saveMemory, scope: scope)
             SessionLog.shared.record("personal.memory.saved", "count=\(personal.memoryCount)")
-            return Output(ok: true, memory: fact)
+            return Output(ok: true, message: result.evicted ? "Новый факт сохранён; для него заменена самая давно обновлённая запись памяти." : nil, memory: MemorySnapshot(result.memory))
+        case "update":
+            guard let id = try optionalID(arguments.memory_id), try store.getMemory(id: id) != nil else { throw PersonalDataError.notFound }
+            guard let text = arguments.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let quote = arguments.source_quote, try intent(scope: scope).isCurrentUserRequest(userRequest),
+                  PersonalRequestPolicy.supportsMemoryUpdate(quote: quote, currentRequest: userRequest) else { throw PersonalDataError.memoryEvidenceRequired }
+            let fact = try personal.saveMemory(text: text, replacing: id)
+            SessionLog.shared.record("personal.memory.updated", "count=\(personal.memoryCount)")
+            return Output(ok: true, memory: MemorySnapshot(fact))
+        case "merge":
+            guard try intent(scope: scope).isCurrentUserRequest(userRequest), PersonalRequestPolicy.allowsMemoryMaintenance(userRequest),
+                  !PersonalRequestPolicy.rejectsMemoryRemoval(userRequest) else { throw PersonalDataError.memoryEvidenceRequired }
+            guard let id = try optionalID(arguments.memory_id), let otherID = try optionalID(arguments.merge_with_id), let text = arguments.text else { throw PersonalDataError.invalidArguments }
+            let fact = try personal.mergeMemories(keeping: id, removing: otherID, text: text)
+            SessionLog.shared.record("personal.memory.merged", "count=\(personal.memoryCount)")
+            return Output(ok: true, message: "Связанные записи объединены.", memory: MemorySnapshot(fact))
         case "remove":
             _ = try authorized(.removeMemory, request: userRequest, scope: scope)
             guard let id = try optionalID(arguments.memory_id), try store.getMemory(id: id) != nil else { throw PersonalDataError.notFound }
@@ -112,15 +142,22 @@ enum AssistantToolExecutor {
             try completed(.removeMemory, scope: scope)
             SessionLog.shared.record("personal.memory.removed", "count=\(personal.memoryCount)")
             return Output(ok: true, message: "Сведение удалено из долговременной памяти.")
-        case "search":
-            let matches = try store.searchMemories(arguments.query ?? "", limit: AssistantLimits.memorySlots)
-            let hasClippedNotes = matches.contains { $0.text.count > AssistantLimits.memoryNoteCharacters }
-            let snapshots = matches.map { fact in
-                var snapshot = fact
-                snapshot.text = AssistantLimits.clipped(fact.text, to: AssistantLimits.memoryNoteCharacters)
-                return snapshot
-            }
-            return Output(ok: true, message: hasClippedNotes ? "Показаны первые \(AssistantLimits.memoryNoteCharacters) символов длинных старых записей. Полный текст сохранён в памяти приложения." : nil, memories: snapshots)
+        case "search", "list":
+            let found = arguments.action == "search"
+                ? try store.searchMemories(arguments.query ?? "", limit: 6)
+                : try store.memories(limit: AssistantLimits.memorySlots)
+            let matches = arguments.action == "search" ? Array(found.prefix(5)) : found
+            let clipped = matches.contains { $0.text.count > AssistantLimits.memoryNoteCharacters }
+            let count = try store.memoryCount()
+            let snapshots = matches.map { MemorySnapshot($0, clipped: true) }
+            var notices: [String] = []
+            if clipped { notices.append("Некоторые старые записи сокращены; вызови get с memory_id для полного текста.") }
+            if arguments.action == "list" && count > matches.count { notices.append("Показаны \(matches.count) из \(count) записей; остальные сохранены и доступны через поиск.") }
+            return Output(ok: true, message: notices.isEmpty ? nil : notices.joined(separator: " "), memories: snapshots,
+                memoryTotal: count, hasMore: arguments.action == "search" ? found.count > matches.count : count > matches.count)
+        case "get":
+            guard let id = try optionalID(arguments.memory_id), let fact = try store.getMemory(id: id) else { throw PersonalDataError.notFound }
+            return Output(ok: true, memory: MemorySnapshot(fact))
         default: throw PersonalDataError.invalidArguments
         }
     }
@@ -161,10 +198,10 @@ enum AssistantToolExecutor {
         case "list":
             try await scheduler.refresh()
             let records = try store.reminders(limit: 10_000)
-                .filter { $0.status != .completed && $0.dueAt > Date() }
+                .filter { $0.status != .completed }
             let formatter = ISO8601DateFormatter()
             formatter.timeZone = .autoupdatingCurrent
-            return Output(ok: true, reminders: Array(records.prefix(40)), localTime: formatter.string(from: Date()), timeZone: TimeZone.autoupdatingCurrent.identifier)
+            return Output(ok: true, message: "Показаны незавершённые напоминания, созданные через Findy, включая прошедшие; другие записи Apple Reminders сюда не входят.", reminders: Array(records.prefix(40)), localTime: formatter.string(from: Date()), timeZone: TimeZone.autoupdatingCurrent.identifier, hasMore: records.count > 40)
         default: throw PersonalDataError.invalidArguments
         }
         SessionLog.shared.record("personal.reminder.saved", "action=\(arguments.action)")
@@ -216,3 +253,120 @@ enum AssistantToolExecutor {
         try PersonalData.shared.requireStore().setLocalState(JSONEncoder().encode(tracker), for: "intent." + scope)
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+@MainActor
+extension AssistantToolExecutor {
+    static func runMemorySmokeIfRequested() async {
+        guard ProcessInfo.processInfo.environment["FINDY_MEMORY_SMOKE"] == "1" else { return }
+        let resultURL = URL.documentsDirectory.appending(path: "memory-tool-smoke.txt")
+        var inserted: UUID?
+        var insertedReminder: UUID?
+        do {
+            let personal = PersonalData.shared
+            let unique = "Памятьsmoke\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            let fact = try personal.saveMemory(text: unique + " любит кофе")
+            inserted = fact.id
+            let prompt = try personal.instructions(base: "base")
+            guard !prompt.contains(unique), prompt.contains("action=search"),
+                  personal.tools(for: "Как дела?", realtime: false).contains(where: { $0.name == "manage_memory" }),
+                  personal.tools(for: "Что запланировано?", realtime: true).contains(where: { $0.name == "manage_reminders" }) else { throw PersonalDataError.invalidArguments }
+            func invoke(_ args: String) async throws -> [String: Any] {
+                let result = try await execute(AssistantToolCall(callID: UUID().uuidString, name: "manage_memory", arguments: args), userRequest: "", scope: "smoke", configuration: AssistantConfiguration(), apiKey: "")
+                guard let object = try JSONSerialization.jsonObject(with: Data(result.output.utf8)) as? [String: Any], object["ok"] as? Bool == true else { throw PersonalDataError.invalidArguments }
+                return object
+            }
+            let query = String(data: try JSONSerialization.data(withJSONObject: ["action": "search", "query": unique]), encoding: .utf8)!
+            let search = try await invoke(query)
+            let list = try await invoke("{\"action\":\"list\"}")
+            let get = try await invoke("{\"action\":\"get\",\"memory_id\":\"\(fact.id.uuidString)\"}")
+            let past = try personal.requireStore().upsertReminder(LocalReminder(title: "Smoke overdue", dueAt: Date().addingTimeInterval(-3600)))
+            insertedReminder = past.id
+            let reminderResult = try await execute(AssistantToolCall(callID: UUID().uuidString, name: "manage_reminders", arguments: "{\"action\":\"list\"}"), userRequest: "", scope: "smoke", configuration: AssistantConfiguration(), apiKey: "")
+            let reminders = try JSONSerialization.jsonObject(with: Data(reminderResult.output.utf8)) as? [String: Any]
+            guard (reminders?["reminders"] as? [[String: Any]])?.contains(where: { $0["id"] as? String == past.id.uuidString }) == true,
+                  (reminders?["message"] as? String)?.contains("другие записи Apple Reminders сюда не входят") == true else { throw PersonalDataError.notFound }
+            guard (search["memories"] as? [[String: Any]])?.contains(where: { $0["id"] as? String == fact.id.uuidString }) == true,
+                  (list["memories"] as? [[String: Any]])?.contains(where: { $0["id"] as? String == fact.id.uuidString }) == true,
+                  (get["memory"] as? [String: Any])?["text"] as? String == fact.text else { throw PersonalDataError.notFound }
+            try personal.deleteMemory(id: fact.id)
+            inserted = nil
+            try personal.requireStore().deleteReminder(id: past.id)
+            insertedReminder = nil
+            try "PASS prompt excludes fact; tools available; search, list, get; overdue reminder list scope".write(to: resultURL, atomically: true, encoding: .utf8)
+        } catch {
+            if let inserted { try? PersonalData.shared.deleteMemory(id: inserted) }
+            if let insertedReminder { try? PersonalData.shared.requireStore().deleteReminder(id: insertedReminder) }
+            try? "FAIL \(error)".write(to: resultURL, atomically: true, encoding: .utf8)
+        }
+    }
+}
+#endif
+
+#if DEBUG && targetEnvironment(simulator)
+@MainActor
+extension AssistantToolExecutor {
+    static func runMemoryUpdateSmokeIfRequested() async {
+        guard ProcessInfo.processInfo.environment["FINDY_MEMORY_UPDATE_SMOKE"] == "1" else { return }
+        let resultURL = URL.documentsDirectory.appending(path: "memory-update-smoke.txt")
+        let personal = PersonalData.shared
+        var inserted: [UUID] = []
+        do {
+            for i in 0..<AssistantLimits.memorySlots {
+                inserted.append(try personal.saveMemory(text: "Изолированный факт \(i)").id)
+            }
+            guard inserted.count == 30, personal.memoryCount == 30 else { throw PersonalDataError.invalidArguments }
+            let unchanged = try personal.requireStore().getMemory(id: inserted[1])
+            let current = "Теперь Москва — мой город."
+            try registerUserMessage(AssistantMessage(role: .user, text: current), scope: "update-smoke")
+            func invoke(_ fields: [String: String], request: String) async throws -> Bool {
+                let data = try JSONSerialization.data(withJSONObject: fields)
+                let call = AssistantToolCall(callID: UUID().uuidString, name: "manage_memory", arguments: String(decoding: data, as: UTF8.self))
+                let result = try await execute(call, userRequest: request, scope: "update-smoke", configuration: AssistantConfiguration(), apiKey: "")
+                return (try JSONSerialization.jsonObject(with: Data(result.output.utf8)) as? [String: Any])?["ok"] as? Bool == true
+            }
+            let base = ["action": "update", "memory_id": inserted[0].uuidString, "text": "Живёт в Москве"]
+            var withoutQuote = base
+            guard try await !invoke(withoutQuote, request: current) else { throw PersonalDataError.invalidArguments }
+            withoutQuote["source_quote"] = "Совсем другое"
+            guard try await !invoke(withoutQuote, request: current) else { throw PersonalDataError.invalidArguments }
+            withoutQuote["source_quote"] = "Теперь Москва"
+            guard try await !invoke(withoutQuote, request: ""),
+                  try await !invoke(withoutQuote, request: "Уже другой запрос") else { throw PersonalDataError.invalidArguments }
+            var missing = withoutQuote
+            missing["memory_id"] = UUID().uuidString
+            guard try await !invoke(missing, request: current) else { throw PersonalDataError.invalidArguments }
+            guard try await !invoke(["action": "save", "text": "Неавторизованная запись"], request: current) else { throw PersonalDataError.invalidArguments }
+            guard try await invoke(withoutQuote, request: current),
+                  try personal.requireStore().getMemory(id: inserted[0])?.text == "Живёт в Москве",
+                  try personal.requireStore().getMemory(id: inserted[1]) == unchanged,
+                  personal.memoryCount == 30 else { throw PersonalDataError.invalidArguments }
+            let refusal = "Теперь Москва, но не сохраняй это."
+            try registerUserMessage(AssistantMessage(role: .user, text: refusal), scope: "update-smoke")
+            guard try await !invoke(withoutQuote, request: refusal) else { throw PersonalDataError.invalidArguments }
+            let merge = ["action": "merge", "memory_id": inserted[0].uuidString, "merge_with_id": inserted[1].uuidString, "text": "Живёт в Москве; сохранён факт 1."]
+            guard try await !invoke(merge, request: refusal), personal.memoryCount == 30 else { throw PersonalDataError.invalidArguments }
+            let removalRefusal = "Не удаляй ничего из памяти."
+            try registerUserMessage(AssistantMessage(role: .user, text: removalRefusal), scope: "update-smoke")
+            guard try await !invoke(merge, request: removalRefusal), personal.memoryCount == 30 else { throw PersonalDataError.invalidArguments }
+            try registerUserMessage(AssistantMessage(role: .user, text: current), scope: "update-smoke")
+            guard try await invoke(merge, request: current), personal.memoryCount == 29,
+                  try personal.requireStore().getMemory(id: inserted[1]) == nil else { throw PersonalDataError.invalidArguments }
+            inserted.remove(at: 1)
+            let fill = try personal.saveMemory(text: "Заполненный слот")
+            inserted.append(fill.id)
+            let explicit = "Запомни, что я люблю велоспорт."
+            try registerUserMessage(AssistantMessage(role: .user, text: explicit), scope: "update-smoke")
+            guard try await invoke(["action": "save", "text": "Любит велоспорт"], request: explicit),
+                  personal.memoryCount == 30, try personal.requireStore().getMemory(id: inserted[1]) == nil else { throw PersonalDataError.invalidArguments }
+            if let created = try personal.requireStore().searchMemories("Любит велоспорт", limit: 1).first { inserted.append(created.id) }
+            for id in inserted { try personal.deleteMemory(id: id) }
+            inserted = []
+            try "PASS full capacity grounded update; atomic merge and eviction; invalid, absent, stale, refused evidence and unrequested create rejected".write(to: resultURL, atomically: true, encoding: .utf8)
+        } catch {
+            for id in inserted { try? personal.deleteMemory(id: id) }
+            try? "FAIL \(error)".write(to: resultURL, atomically: true, encoding: .utf8)
+        }
+    }
+}
+#endif

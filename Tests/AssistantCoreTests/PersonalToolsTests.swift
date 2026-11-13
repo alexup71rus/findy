@@ -3,6 +3,17 @@ import XCTest
 @testable import AssistantCore
 
 final class PersonalToolsTests: XCTestCase {
+    func testMemoryCorrectionRequiresGroundingInCurrentUserWordsAndRespectsRefusal() {
+        XCTAssertTrue(PersonalRequestPolicy.supportsMemoryUpdate(quote: "Теперь Москва", currentRequest: "Теперь   Москва — мой город."))
+        XCTAssertTrue(PersonalRequestPolicy.supportsMemoryUpdate(quote: "Москва", currentRequest: "Москва"))
+        for (quote, request) in [("Теперь Москва", "Теперь я живу в Казани"), ("!", "!"), ("", "Теперь Москва"),
+                                 ("Теперь Москва", "Теперь Москва, но не запоминай это"),
+                                 ("Теперь Москва", "Теперь Москва, не сохраняй это"),
+                                 ("Теперь Москва", "Теперь Москва, не меняй память")] {
+            XCTAssertFalse(PersonalRequestPolicy.supportsMemoryUpdate(quote: quote, currentRequest: request), request)
+        }
+    }
+
     func testOnlyExplicitRequestsAuthorizeSavingMemory() {
         for request in [
             "Запомни, что я левша.",
@@ -140,9 +151,11 @@ final class PersonalToolsTests: XCTestCase {
             XCTAssertEqual(properties["action"]?["type"] as? String, "string")
             for property in properties.values { XCTAssertEqual(property["type"] as? String, "string") }
             if definition["name"] as? String == "manage_memory" {
-                XCTAssertEqual(Set(actions), ["save", "remove", "search"])
+                XCTAssertEqual(Set(actions), ["save", "update", "merge", "remove", "search", "list", "get"])
                 XCTAssertNotNil(properties["text"])
                 XCTAssertNotNil(properties["memory_id"])
+                XCTAssertNotNil(properties["source_quote"])
+                XCTAssertNotNil(properties["merge_with_id"])
                 XCTAssertNotNil(properties["query"])
                 XCTAssertEqual(properties["text"]?["maxLength"] as? Int, AssistantLimits.memoryNoteCharacters)
             } else {

@@ -22,11 +22,16 @@ struct ContentView: View {
     @State private var historyActionError: String?
     @State private var configureAfterOnboarding = false
     @State private var draftMessage = ""
+    @State private var draftAttachments: [AssistantAttachment] = []
+    @State private var attachmentError: String?
+    @State private var importingAttachment = false
     @State private var composerHeight: CGFloat = 90
     @State private var position = ScrollPosition(idType: UUID.self, edge: .bottom)
     @State private var metrics = ChatScrollMetrics()
     @State private var rowFrames: [UUID: CGRect] = [:]
     @State private var followsLatest = true
+    @State private var userMovingToLatest = false
+    @State private var userScrollStartOffset: CGFloat?
     @State private var isPaging = false
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var pagingGeneration = UUID()
@@ -63,7 +68,7 @@ struct ContentView: View {
             || (!settings.usesProviderVoice && SFSpeechRecognizer.authorizationStatus() != .authorized)
     }
     private var visibleRecords: [StoredMessage] {
-        timeline.records.filter { !$0.message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        timeline.records.filter { !$0.message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !ChatAttachments.list(for: $0.id).isEmpty }
     }
     private var visibleStreamingReply: AssistantMessage? {
         guard timeline.isAtLatest, let reply = session.streamingReply, !reply.text.isEmpty,
@@ -102,6 +107,10 @@ struct ContentView: View {
                 Button("Отмена", role: .cancel) { }
                 Button("Открыть GitHub") { openURL(URL(string: "https://github.com/alexup71rus/findy")!) }
             }
+            .alert("Не удалось прикрепить", isPresented: Binding(
+                get: { attachmentError != nil }, set: { if !$0 { attachmentError = nil } }
+            )) { Button("Понятно", role: .cancel) { attachmentError = nil } }
+                message: { Text(attachmentError ?? "") }
             .alert("Очистить чат?", isPresented: $confirmingClearHistory) {
                 Button("Отмена", role: .cancel) { }
                 Button("Очистить чат", role: .destructive) {
@@ -230,7 +239,25 @@ struct ContentView: View {
                             .containerRelativeFrame(.horizontal) { width, _ in max(0, width - 36) }
                             .id(reply.id)
                     }
-                    if timeline.isAtLatest && (session.phase == .thinking || session.isSendingText)
+                    if timeline.isAtLatest && session.isGeneratingImage {
+                        HStack(spacing: 12) {
+                            Image(systemName: "photo")
+                                .font(.title3)
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 38, height: 38)
+                                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Создаю изображение…").font(.subheadline.weight(.medium))
+                                Text("Это может занять некоторое время").font(.caption).foregroundStyle(.secondary)
+                            }
+                            ProgressView().controlSize(.small).padding(.leading, 4)
+                        }
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("image-generation-progress")
+                    }
+                    if timeline.isAtLatest && !session.isGeneratingImage && (session.phase == .thinking || session.isSendingText)
                         && visibleStreamingReply == nil {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
@@ -265,14 +292,33 @@ struct ContentView: View {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
             .onPreferenceChange(ChatRowFrames.self) { rowFrames = $0 }
-            .onScrollPhaseChange { _, next in
+            .onScrollPhaseChange { old, next, context in
                 scrollPhase = next
-                if next == .idle && followsLatest && timeline.isAtLatest { scrollToBottom() }
+                // Touching the history suspends queued tail scrolls before any
+                // geometry callback or streaming update can race the gesture.
+                if next == .tracking || next == .interacting {
+                    if next == .tracking || old != .tracking {
+                        userMovingToLatest = false
+                        userScrollStartOffset = context.geometry.contentOffset.y
+                    }
+                    setFollowing(false)
+                } else if next == .idle,
+                          old == .tracking || old == .interacting || old == .decelerating {
+                    let geometry = context.geometry
+                    let distance = max(0, geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY)
+                    if let start = userScrollStartOffset {
+                        userMovingToLatest = geometry.contentOffset.y > start + 0.5
+                    }
+                    userScrollStartOffset = nil
+                    // Resume only after a downward gesture ends at the tail;
+                    // short upward drags must keep the reading position.
+                    if distance <= 12 && timeline.isAtLatest { setFollowing(true) }
+                }
             }
             .onScrollGeometryChange(for: ChatScrollMetrics.self) { geometry in
                 return ChatScrollMetrics(
                     offset: geometry.contentOffset.y + geometry.contentInsets.top,
-                    distanceToBottom: max(0, geometry.contentSize.height - geometry.visibleRect.maxY),
+                    distanceToBottom: max(0, geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY),
                     viewportHeight: geometry.containerSize.height,
                     topInset: geometry.contentInsets.top,
                     bottomInset: geometry.contentInsets.bottom
@@ -286,9 +332,15 @@ struct ContentView: View {
                     scrollToBottom()
                 }
                 if userScrolling {
-                    setFollowing(new.distanceToBottom < 60 && timeline.isAtLatest)
+                    if new.offset > old.offset + 0.5 { userMovingToLatest = true }
+                    else if new.offset < old.offset - 0.5 { userMovingToLatest = false }
                     if new.offset < 220 && new.offset < old.offset - 0.5 && timeline.hasOlder { paginate(.older) }
                     else if new.distanceToBottom < 220 && new.offset > old.offset + 0.5 && timeline.hasNewer { paginate(.newer) }
+                }
+                // Geometry may arrive after idle or pagination; only a downward
+                // user gesture may restore following, never a streamed update.
+                if userMovingToLatest && new.distanceToBottom <= 12 && timeline.isAtLatest {
+                    setFollowing(true)
                 }
             }
             .onChange(of: timeline.records) { _, _ in
@@ -298,6 +350,9 @@ struct ContentView: View {
                 if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
             }
             .onChange(of: session.isSendingText) { _, _ in
+                if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
+            }
+            .onChange(of: session.isGeneratingImage) { _, _ in
                 if followsLatest && timeline.isAtLatest && !isPaging { scrollToBottom() }
             }
             .background(Color(.systemBackground))
@@ -420,6 +475,11 @@ struct ContentView: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
+            if !voiceComposerActive && !draftAttachments.isEmpty {
+                DraftAttachmentsView(attachments: draftAttachments, disabled: session.isSendingText) { id in
+                    draftAttachments.removeAll { $0.id == id }
+                }
+            }
             if let error = actualError {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.circle")
@@ -452,6 +512,15 @@ struct ContentView: View {
                     .accessibilityHidden(!showsDraftCharacterCount)
             }
             HStack(alignment: .bottom, spacing: 8) {
+                if !voiceComposerActive {
+                AttachmentPickerButton(imagesAllowed: settings.configuration.supportsImageInput,
+                                       remaining: 3 - draftAttachments.count,
+                                       disabled: session.isSendingText,
+                                       onImport: addAttachment,
+                                       onError: { attachmentError = $0 },
+                                       onLoading: { importingAttachment = $0 })
+                    .padding(.bottom, 1)
+                }
                 Group {
                     if voiceComposerActive {
                         VoiceComposerWave(phase: displayedVoicePhase, isPresented: page == nil && !showingOnboarding)
@@ -516,7 +585,7 @@ struct ContentView: View {
                     .accessibilityLabel("Завершить голосовой разговор")
                     .accessibilityIdentifier("chat-voice-stop")
                     .padding(.bottom, 1)
-                } else if draftMessage.isEmpty && !session.isSendingText {
+                } else if draftMessage.isEmpty && draftAttachments.isEmpty && !session.isSendingText {
                     Button(action: handleVoiceButton) {
                         Image(systemName: "mic")
                             .font(.system(size: 21, weight: .medium))
@@ -544,8 +613,8 @@ struct ContentView: View {
     }
 
     private var sendEnabled: Bool {
-        session.isSendingText || (draftMessage.count <= AssistantLimits.inputCharacters
-            && !draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        session.isSendingText || (!importingAttachment && draftMessage.count <= AssistantLimits.inputCharacters
+            && (!draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty))
     }
 
     private func setFollowing(_ value: Bool) {
@@ -595,14 +664,16 @@ struct ContentView: View {
             try? await Task.sleep(for: .milliseconds(30))
             guard pagingGeneration == token else { return }
             isPaging = false
-            if metrics.distanceToBottom < 60 && timeline.isAtLatest { setFollowing(true) }
+            if userMovingToLatest && metrics.distanceToBottom <= 12 && timeline.isAtLatest {
+                setFollowing(true)
+            }
         }
     }
 
     private var sharingDescription: String {
         let provider = settings.selectedProvider
         let recipient = "\(provider?.name ?? "Провайдер") · \(URL(string: settings.configuration.endpoint)?.host ?? settings.configuration.endpoint)"
-        return "\(recipient)\n\nСообщения и сохранённая память передаются этому сервису для ответа. В режиме «Провайдер» также передаётся аудио. Обработка данных определяется условиями сервиса. Разрешение можно отозвать в настройках."
+        return "\(recipient)\n\nСообщения, выбранные фото и файлы передаются этому сервису для ответа. К памяти ассистент обращается по необходимости. В режиме «Провайдер» также передаётся аудио. Обработка данных определяется условиями сервиса. Разрешение можно отозвать в настройках."
     }
 
     private func ensureSharing(_ action: SharingAction) -> Bool {
@@ -617,10 +688,29 @@ struct ContentView: View {
     private func sendMessage() {
         guard settings.isConfiguredForChat else { page = .settings; return }
         guard !voiceComposerActive, !session.isSendingText, sendEnabled, ensureSharing(.text) else { return }
-        if session.sendText(draftMessage) {
+        guard validateAttachmentCapability() else { return }
+        if session.sendText(draftMessage, attachments: draftAttachments) {
             draftMessage = ""
+            draftAttachments = []
             jumpToLatest()
         }
+    }
+
+    private func addAttachment(_ attachment: AssistantAttachment) {
+        guard draftAttachments.count < 3 else { attachmentError = "Можно прикрепить не больше трёх файлов или фото."; return }
+        if attachment.mimeType.hasPrefix("image/"), !settings.configuration.supportsImageInput {
+            attachmentError = "Выбранный провайдер не принимает фото. Включите поддержку изображений в настройках подключения."
+            return
+        }
+        draftAttachments.append(attachment)
+    }
+
+    private func validateAttachmentCapability() -> Bool {
+        guard settings.configuration.supportsImageInput || !draftAttachments.contains(where: { $0.mimeType.hasPrefix("image/") }) else {
+            attachmentError = "Выбранный провайдер не принимает фото. Выберите модель с поддержкой изображений или уберите фото."
+            return false
+        }
+        return true
     }
 
     private func stopVoiceConversation() {
@@ -690,6 +780,7 @@ private struct ConversationMessageView: View {
                     .lineSpacing(3)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                MessageAttachmentsView(messageID: message.id)
                 GeneratedImageView(messageID: message.id)
                 if !message.sources.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {

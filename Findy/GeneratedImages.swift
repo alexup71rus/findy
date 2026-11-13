@@ -13,7 +13,7 @@ enum GeneratedImages {
     )
 
     private struct Arguments: Decodable { let prompt: String }
-    private static func directory(for store: LocalDataStore) -> URL {
+    static func directory(for store: LocalDataStore) -> URL {
         store.databaseURL.deletingLastPathComponent().appendingPathComponent("GeneratedImages", isDirectory: true)
     }
     private static func key(_ id: UUID) -> String { "image." + id.uuidString.lowercased() }
@@ -22,6 +22,10 @@ enum GeneratedImages {
               let data = try? store.localState(for: key(id)),
               let name = String(data: data, encoding: .utf8), name == id.uuidString.lowercased() + ".png" else { return nil }
         return directory(for: store).appendingPathComponent(name)
+    }
+    static func wasRemoved(for id: UUID) -> Bool {
+        guard let store = try? PersonalData.shared.requireStore(), let value = try? store.localState(for: key(id)) else { return false }
+        return String(data: value, encoding: .utf8) == "removed"
     }
     static func removeAllFiles(store: LocalDataStore) throws {
         let folder = directory(for: store)

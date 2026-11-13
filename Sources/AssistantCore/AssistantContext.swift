@@ -4,7 +4,7 @@ public enum AssistantContext {
     public static let messageLimit = AssistantLimits.contextMessageDefault
 
     public static func recent(_ messages: [AssistantMessage], limit: Int = AssistantLimits.contextMessageDefault) -> [AssistantMessage] {
-        var result = Array(messages.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.suffix(AssistantLimits.normalizedContextMessageCount(limit)))
+        var result = Array(messages.filter(\.hasContent).suffix(AssistantLimits.normalizedContextMessageCount(limit)))
         while result.first?.role == .assistant { result.removeFirst() }
         return result
     }

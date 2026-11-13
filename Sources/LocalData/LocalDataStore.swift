@@ -149,6 +149,7 @@ public final class LocalDataStore: @unchecked Sendable {
             try Self.transaction(db) {
                 try Self.execute(db, "DELETE FROM messages WHERE id = ?", [.text(id.uuidString.lowercased())])
                 try Self.execute(db, "DELETE FROM local_state WHERE key = ?", [.text("image." + id.uuidString.lowercased())])
+                try Self.execute(db, "DELETE FROM local_state WHERE key = ?", [.text("attachment." + id.uuidString.lowercased())])
                 try Self.execute(db, "DELETE FROM local_state WHERE key LIKE 'intent.%'")
             }
         }
@@ -204,6 +205,44 @@ public final class LocalDataStore: @unchecked Sendable {
         }
     }
 
+    /// IDs with attachment manifests, including interrupted saves with no message.
+    public func attachmentStateIDs() throws -> [UUID] {
+        try withDatabase { db in
+            try Self.rows(db, "SELECT substr(key, 12) FROM local_state WHERE key LIKE 'attachment.%'") { statement in
+                guard let id = UUID(uuidString: try Self.text(statement, 0)) else { throw LocalDataError.invalidStoredData("ключ вложения") }
+                return id
+            }
+        }
+    }
+
+    public func mediaStates() throws -> [StoredMediaState] {
+        try withDatabase { db in
+            try Self.rows(db, """
+                SELECT s.key, s.value, m.id, m.created_at FROM local_state s
+                JOIN messages m ON m.id = substr(s.key, instr(s.key, '.') + 1)
+                WHERE s.key LIKE 'attachment.%' OR s.key LIKE 'image.%'
+                ORDER BY m.created_at ASC, m.id ASC
+                """) { statement in
+                    StoredMediaState(key: try Self.text(statement, 0), value: try Self.blob(statement, 1),
+                                     messageID: try Self.identifier(statement, 2), createdAt: try Self.date(statement, 3))
+                }
+        }
+    }
+
+    /// Apply all media tombstones together before removing any files.
+    public func updateMediaStates(_ updates: [String: Data]) throws {
+        try withDatabase { db in
+            try Self.transaction(db) {
+                for (key, value) in updates {
+                    guard key.hasPrefix("attachment.") || key.hasPrefix("image."), value.count <= 32_768 else {
+                        throw LocalDataError.invalidValue("Недопустимые данные вложения.")
+                    }
+                    try Self.execute(db, "UPDATE local_state SET value = ? WHERE key = ?", [.blob(value), .text(key)])
+                }
+            }
+        }
+    }
+
     public func setLocalState(_ value: Data?, for key: String) throws {
         guard !key.isEmpty, key.utf8.count <= 256, (value?.count ?? 0) <= 32_768 else { throw LocalDataError.invalidValue("Недопустимое локальное состояние.") }
         try withDatabase { db in
@@ -215,6 +254,11 @@ public final class LocalDataStore: @unchecked Sendable {
 
     @discardableResult
     public func upsertMemory(_ fact: MemoryFact) throws -> MemoryFact {
+        try upsertMemory(fact, evictOldestWhenFull: false).memory
+    }
+
+    /// New saves can replace one oldest record atomically when requested.
+    public func upsertMemory(_ fact: MemoryFact, evictOldestWhenFull: Bool) throws -> (memory: MemoryFact, evicted: Bool) {
         guard fact.text.count <= AssistantLimits.memoryNoteCharacters else {
             throw LocalDataError.invalidValue("Факт должен быть не длиннее \(AssistantLimits.memoryNoteCharacters) символов.")
         }
@@ -227,21 +271,52 @@ public final class LocalDataStore: @unchecked Sendable {
                 if let duplicate = try Self.rows(db, "SELECT \(Self.memoryColumns) FROM memories WHERE normalized = ? LIMIT 1", [.text(normalized)], read: Self.readMemory).first,
                    duplicate.id != fact.id {
                     if try Self.memory(db, id: fact.id) != nil { throw LocalDataError.duplicateMemory }
-                    return duplicate
+                    return (duplicate, false)
                 }
+                var evicted = false
                 // The count and insert share the write transaction. Separate
                 // store instances cannot both claim the last available slot.
                 // Legacy records are retained; edits never consume a slot.
                 if try Self.memory(db, id: fact.id) == nil,
                    (try Self.scalar(db, "SELECT COUNT(*) FROM memories") ?? 0) >= Int64(AssistantLimits.memorySlots) {
-                    throw LocalDataError.invalidValue("Память заполнена: лимит \(AssistantLimits.memorySlots) записей. Измените или удалите запись.")
+                    guard evictOldestWhenFull else {
+                        throw LocalDataError.invalidValue("Память заполнена: лимит \(AssistantLimits.memorySlots) записей. Измените или удалите запись.")
+                    }
+                    guard let oldest = try Self.rows(db, "SELECT \(Self.memoryColumns) FROM memories ORDER BY updated_at ASC, id ASC LIMIT 1", read: Self.readMemory).first else {
+                        throw LocalDataError.invalidStoredData("самая старая запись памяти")
+                    }
+                    try Self.execute(db, "DELETE FROM memories WHERE id = ?", [.text(oldest.id.uuidString.lowercased())])
+                    evicted = true
                 }
                 try Self.execute(db, """
                     INSERT INTO memories(id, body, normalized, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET body=excluded.body, normalized=excluded.normalized, updated_at=excluded.updated_at
                     """, [.text(fact.id.uuidString.lowercased()), .text(text), .text(normalized), .real(fact.createdAt.timeIntervalSince1970), .real(fact.updatedAt.timeIntervalSince1970)])
                 guard let stored = try Self.memory(db, id: fact.id) else { throw LocalDataError.invalidStoredData("факт после записи") }
-                return stored
+                return (stored, evicted)
+            }
+        }
+    }
+
+    /// Merge two existing facts as one atomic edit, or leave both untouched.
+    public func mergeMemories(keeping id: UUID, removing otherID: UUID, text: String) throws -> MemoryFact {
+        guard id != otherID else { throw LocalDataError.invalidValue("Выберите две разные записи.") }
+        guard text.count <= AssistantLimits.memoryNoteCharacters else { throw LocalDataError.invalidValue("Факт должен быть не длиннее \(AssistantLimits.memoryNoteCharacters) символов.") }
+        let body = try Self.validText(text, field: "Факт")
+        let normalized = Self.normalized(body)
+        return try withDatabase { db in
+            try Self.transaction(db) {
+                guard var kept = try Self.memory(db, id: id), try Self.memory(db, id: otherID) != nil else {
+                    throw LocalDataError.invalidValue("Одна из записей больше не найдена.")
+                }
+                if let duplicate = try Self.rows(db, "SELECT \(Self.memoryColumns) FROM memories WHERE normalized = ? LIMIT 1", [.text(normalized)], read: Self.readMemory).first,
+                   duplicate.id != id && duplicate.id != otherID { throw LocalDataError.duplicateMemory }
+                // Delete then update inside one transaction: rollback restores both on any failure.
+                try Self.execute(db, "DELETE FROM memories WHERE id = ?", [.text(otherID.uuidString.lowercased())])
+                kept.text = body
+                kept.updatedAt = Date()
+                try Self.execute(db, "UPDATE memories SET body = ?, normalized = ?, updated_at = ? WHERE id = ?", [.text(body), .text(normalized), .real(kept.updatedAt.timeIntervalSince1970), .text(id.uuidString.lowercased())])
+                return kept
             }
         }
     }
@@ -266,10 +341,41 @@ public final class LocalDataStore: @unchecked Sendable {
         let limit = Self.pageLimit(limit)
         guard limit > 0 else { return [] }
         guard query.count <= 2_000 else { throw LocalDataError.invalidValue("Поисковый запрос должен быть не длиннее 2000 символов.") }
-        let normalized = Self.normalized(query)
+        let phrase = Self.searchNormalized(query).trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = Set(Self.searchWords(phrase).filter { $0.count > 1 && !Self.searchStopWords.contains($0) })
         return try withDatabase { db in
-            try Self.rows(db, "SELECT \(Self.memoryColumns) FROM memories WHERE instr(normalized, ?) > 0 ORDER BY updated_at DESC, id ASC LIMIT ?", [.text(normalized), .integer(Int64(limit))], read: Self.readMemory)
+            let records = try Self.rows(db, "SELECT \(Self.memoryColumns) FROM memories ORDER BY updated_at DESC, id ASC", read: Self.readMemory)
+            if phrase.isEmpty { return Array(records.prefix(limit)) }
+            let scored = records.enumerated().compactMap { index, fact -> (MemoryFact, Bool, Int, Int)? in
+                let text = Self.searchNormalized(fact.text)
+                let candidates = Self.searchWords(text)
+                let matches = words.filter { word in
+                    candidates.contains { candidate in
+                        if candidate.contains(word) || (word.contains(candidate) && candidate.count >= 4) { return true }
+                        guard candidate.count >= 5, word.count >= 5 else { return false }
+                        return candidate.prefix(4) == word.prefix(4)
+                    }
+                }.count
+                let exact = text.contains(phrase)
+                guard exact || matches > 0 else { return nil }
+                return (fact, exact, matches, index)
+            }.sorted { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 }
+                if lhs.2 != rhs.2 { return lhs.2 > rhs.2 }
+                return lhs.3 < rhs.3
+            }
+            return Array(scored.prefix(limit).map { $0.0 })
         }
+    }
+
+    private static let searchStopWords: Set<String> = ["что", "это", "как", "для", "про", "мне", "мой", "моя", "мое", "мои", "меня", "пользователь", "the", "and", "about", "what", "my"]
+
+    private static func searchNormalized(_ text: String) -> String {
+        normalized(text).folding(options: [.diacriticInsensitive], locale: Locale(identifier: "ru_RU"))
+    }
+
+    private static func searchWords(_ text: String) -> [String] {
+        text.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
     }
 
     public func deleteMemory(id: UUID) throws {

@@ -9,6 +9,140 @@ final class FindyUITests: XCTestCase {
         return app
     }
 
+    private func openMediaStorage(in app: XCUIApplication) {
+        let data = app.buttons["Данные и доступ"]
+        for _ in 0..<3 where !data.isHittable { app.swipeUp() }
+        XCTAssertTrue(data.waitForExistence(timeout: 3))
+        data.tap()
+        let storage = app.buttons["media-storage-settings"]
+        for _ in 0..<3 where !storage.isHittable { app.swipeUp() }
+        XCTAssertTrue(storage.waitForExistence(timeout: 3))
+        storage.tap()
+        XCTAssertTrue(app.buttons["media-retention"].waitForExistence(timeout: 3))
+    }
+
+    private func cancelNativeConfirmation(in app: XCUIApplication) {
+        let dismiss = app.otherElements["PopoverDismissRegion"]
+        if dismiss.exists {
+            dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.8)).tap()
+        } else {
+            app.buttons.matching(NSPredicate(format: "label IN %@", ["Отмена", "Отменить", "Cancel"])).firstMatch.tap()
+        }
+    }
+
+    func testMediaStorageRetentionPersistsAndClearKeepsMessageText() {
+        let app = launch(["--seed-ui-demo", "--demo-attachments", "--show-settings"])
+        app.terminate(); app.launch()
+        openMediaStorage(in: app)
+        let clear = app.buttons["media-clear"]
+        XCTAssertTrue(clear.isEnabled)
+        let demo = XCTAttachment(screenshot: app.screenshot())
+        demo.name = "Media storage demo"; demo.lifetime = .keepAlways; add(demo)
+        clear.tap()
+        XCTAssertTrue(app.buttons["Удалить"].waitForExistence(timeout: 3))
+        cancelNativeConfirmation(in: app)
+        XCTAssertTrue(clear.isEnabled, "Cancel preserves the device copies")
+        clear.tap(); app.buttons["Удалить"].tap()
+        let emptySummary = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "На устройстве, 0")).firstMatch
+        XCTAssertTrue(emptySummary.waitForExistence(timeout: 3), "Successful cleanup reports zero stored files")
+        app.navigationBars["Файлы и изображения"].buttons.element(boundBy: 0).tap()
+        app.navigationBars["Данные и доступ"].buttons.element(boundBy: 0).tap()
+        app.buttons["Готово"].tap()
+        XCTAssertTrue(app.staticTexts["Подойдёт такой маршрут для спокойной прогулки? Приложил карту и список вещей."].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["message-attachment-removed"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["Открыть вложение Прогулка у озера.jpg"].exists)
+        app.buttons["findy-menu"].tap(); app.buttons["Настройки"].tap()
+        openMediaStorage(in: app)
+        let retention = app.buttons["media-retention"]
+        retention.tap()
+        for title in ["Всегда", "7 дней", "30 дней", "60 дней", "90 дней"] { XCTAssertTrue(app.buttons[title].exists) }
+        app.buttons["30 дней"].tap()
+        XCTAssertTrue(app.buttons["Включить и очистить старые файлы"].waitForExistence(timeout: 3))
+        cancelNativeConfirmation(in: app)
+        XCTAssertTrue(retention.label.contains("Всегда") || retention.value as? String == "Всегда")
+        retention.tap(); app.buttons["30 дней"].tap()
+        app.buttons["Включить и очистить старые файлы"].tap()
+        app.terminate(); app.launch()
+        openMediaStorage(in: app)
+        XCTAssertTrue(retention.label.contains("30 дней") || retention.value as? String == "30 дней")
+        retention.tap(); app.buttons["Всегда"].tap()
+        XCTAssertTrue(retention.label.contains("Всегда") || retention.value as? String == "Всегда")
+    }
+
+    func testImageGenerationProgressCompletesAndCanBeCancelled() {
+        let app = launch(["--ui-local-replies"])
+        let composer = app.textFields["chat-composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        composer.typeText("imagefixture")
+        app.buttons["chat-send"].tap()
+        let progress = app.descendants(matching: .any)["image-generation-progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        XCTAssertTrue(progress.label.contains("Создаю изображение"))
+        let progressShot = XCTAttachment(screenshot: app.screenshot())
+        progressShot.name = "Image generation progress"; progressShot.lifetime = .keepAlways; add(progressShot)
+        XCTAssertTrue(app.buttons["Открыть изображение"].waitForExistence(timeout: 8))
+        XCTAssertFalse(progress.exists)
+        let ready = NSPredicate(format: "label == %@", "Отправить сообщение")
+        expectation(for: ready, evaluatedWith: app.buttons["chat-send"])
+        waitForExpectations(timeout: 8)
+        composer.tap()
+        composer.typeText("imagefixture")
+        app.buttons["chat-send"].tap()
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        app.buttons["chat-send"].tap()
+        XCTAssertFalse(progress.waitForExistence(timeout: 2))
+    }
+
+    func testAttachmentDraftRemoveSendAndHistoryPersistence() {
+        let app = launch(["--ui-local-replies", "--ui-attachments-fixture"])
+        let attach = app.buttons["chat-attach"]
+        XCTAssertTrue(attach.waitForExistence(timeout: 5))
+        attach.tap(); app.buttons["Тестовое фото"].tap()
+        let removePhoto = app.buttons["Убрать Тестовое фото.jpg"]
+        XCTAssertTrue(removePhoto.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chat-send"].isEnabled, "An attachment-only message can be sent")
+        removePhoto.tap()
+        XCTAssertTrue(removePhoto.waitForNonExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["chat-send"].isEnabled)
+        attach.tap(); app.buttons["Тестовый файл"].tap()
+        attach.tap(); app.buttons["Тестовое фото"].tap()
+        XCTAssertTrue(removePhoto.waitForExistence(timeout: 5))
+        attach.tap(); app.buttons["Тестовый файл"].tap()
+        XCTAssertFalse(attach.isEnabled, "Three attachments fill the per-message limit")
+        app.buttons.matching(NSPredicate(format: "label == %@", "Убрать Пример.txt")).firstMatch.tap()
+        XCTAssertTrue(attach.isEnabled)
+        XCTAssertEqual(app.textFields["chat-composer"].value as? String, "Сообщение…", "File content stays separate from the 500-character draft")
+        let draft = XCTAttachment(screenshot: app.screenshot())
+        draft.name = "Photo and file attachment draft"; draft.lifetime = .keepAlways; add(draft)
+        app.buttons["chat-send"].tap()
+        let photo = app.buttons["Открыть вложение Тестовое фото.jpg"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Открыть вложение Пример.txt"].exists)
+        photo.tap()
+        XCTAssertTrue(app.buttons["Закрыть"].waitForExistence(timeout: 3))
+        app.buttons["Закрыть"].tap()
+        app.terminate(); app.launch()
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Открыть вложение Пример.txt"].exists)
+        let history = XCTAttachment(screenshot: app.screenshot())
+        history.name = "Persisted photo and text file"; history.lifetime = .keepAlways; add(history)
+    }
+
+    func testNativePhotoPickerCanCancelAndVoiceHasNoAttachmentControl() {
+        let app = launch(["--ui-local-replies", "--ui-attachments-fixture"])
+        app.buttons["chat-attach"].tap()
+        app.buttons["Фото"].tap()
+        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Отмена", "Отменить", "Cancel"])).firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        cancel.tap()
+        XCTAssertTrue(app.buttons["chat-attach"].isHittable)
+        app.terminate()
+        let voice = launch(["--preview-voice-listening"])
+        XCTAssertTrue(voice.buttons["chat-voice-stop"].waitForExistence(timeout: 5))
+        XCTAssertFalse(voice.buttons["chat-attach"].exists)
+    }
+
     func testGeneratedImageViewer() {
         let app = launch(["--seed-ui-image"])
         let image = app.buttons["Открыть изображение"]
@@ -258,18 +392,57 @@ final class FindyUITests: XCTestCase {
         XCTAssertTrue(history.exists)
     }
 
+    func testManualReturnToBottomHidesJumpWithoutTappingIt() {
+        let app = launch(["--seed-ui-rich-history"])
+        let history = app.scrollViews["chat-history"]
+        let last = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Вопрос 80:")).firstMatch
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        let bottomY = last.frame.minY
+        history.swipeDown(velocity: .fast)
+        let jump = app.buttons["chat-jump-latest"]
+        XCTAssertTrue(jump.waitForExistence(timeout: 3))
+        history.swipeUp(velocity: .fast)
+        XCTAssertEqual(last.frame.minY, bottomY, accuracy: 24, "The gesture returned to the tail within the native inset tolerance")
+        XCTAssertTrue(jump.waitForNonExistence(timeout: 3), "Manual return to the tail must resume following and hide the jump button")
+    }
+
+    func testShortUpwardDragKeepsItsPositionAfterRelease() {
+        let app = launch(["--seed-ui-rich-history"])
+        let history = app.scrollViews["chat-history"]
+        let row = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Вопрос 80:")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        let before = row.frame.minY
+        let start = history.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+        let end = start.withOffset(CGVector(dx: 0, dy: 70))
+        start.press(forDuration: 0.15, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)
+        XCTAssertGreaterThan(row.frame.minY, before + 25, "A small upward scroll must not snap back at release")
+        let held = row.frame.minY
+        sleep(2)
+        XCTAssertEqual(row.frame.minY, held, accuracy: 3)
+        XCTAssertTrue(app.buttons["chat-jump-latest"].exists)
+        app.buttons["chat-jump-latest"].tap()
+        XCTAssertTrue(app.buttons["chat-jump-latest"].waitForNonExistence(timeout: 3))
+    }
+
     func testStreamingDoesNotPullReaderBackToLatest() {
-        let app = launch(["--seed-ui-rich-history", "--ui-local-replies"])
+        let app = launch(["--seed-ui-rich-history", "--ui-local-replies", "--ui-slow-stream"])
         let composer = app.textFields["chat-composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         composer.tap(); composer.typeText("Проверка прокрутки")
         app.buttons["chat-send"].tap()
         let history = app.scrollViews["chat-history"]
-        history.swipeDown(velocity: .fast)
+        let row = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Вопрос 80:")).firstMatch
+        let start = history.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+        start.press(forDuration: 0.15, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 100)), withVelocity: .slow, thenHoldForDuration: 0.15)
         let jump = app.buttons["chat-jump-latest"]
-        XCTAssertTrue(jump.waitForExistence(timeout: 5))
+        XCTAssertTrue(jump.waitForExistence(timeout: 3))
+        let held = row.frame.minY
+        XCTAssertEqual(app.buttons["chat-send"].label, "Остановить ответ", "The regression must overlap a live stream")
         sleep(3)
         XCTAssertTrue(jump.exists, "Streaming should not return the reader to the latest message")
+        XCTAssertEqual(row.frame.minY, held, accuracy: 4, "Tokens and keyboard geometry must preserve the older row")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Short upward drag holds history while streaming"; screenshot.lifetime = .keepAlways; add(screenshot)
     }
 
     func testDeleteSingleMessageAndClearHistoryRequireConfirmation() {

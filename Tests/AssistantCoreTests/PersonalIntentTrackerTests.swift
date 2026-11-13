@@ -38,6 +38,15 @@ final class PersonalIntentTrackerTests: XCTestCase {
         XCTAssertNil(tracker.request(for: .createReminder, currentRequest: "Расскажи другую историю.", now: now.addingTimeInterval(25)))
     }
 
+    func testCurrentUserEvidenceCannotUseAnEarlierTurn() {
+        var tracker = PersonalIntentTracker()
+        tracker.accept(id: UUID(), text: "Теперь Москва", now: now)
+        XCTAssertTrue(tracker.isCurrentUserRequest("Теперь Москва"))
+        tracker.accept(id: UUID(), text: "Привет", now: now.addingTimeInterval(1))
+        XCTAssertFalse(tracker.isCurrentUserRequest("Теперь Москва"))
+        XCTAssertFalse(tracker.isCurrentUserRequest(""))
+    }
+
     func testSuccessfulActionDoesNotAuthorizeAnUnrelatedSubsequentTurn() {
         var tracker = PersonalIntentTracker()
         let original = "Напомни завтра в 20:00 купить молоко."
@@ -83,6 +92,39 @@ final class PersonalIntentTrackerTests: XCTestCase {
         XCTAssertNil(tracker.request(for: .createReminder, currentRequest: save, now: now.addingTimeInterval(1)))
         XCTAssertNotNil(tracker.request(for: .saveMemory, currentRequest: save, now: now.addingTimeInterval(1)))
         XCTAssertNil(tracker.request(for: .removeMemory, currentRequest: save, now: now.addingTimeInterval(1)))
+    }
+
+    func testRevisedTranscriptForSameItemRevokesEarlierConsent() {
+        var tracker = PersonalIntentTracker()
+        let id = UUID()
+        tracker.accept(id: id, text: "Запомни мой город.", now: now)
+        tracker.accept(id: id, text: "Запомни мой город, не сохраняй его.", now: now.addingTimeInterval(1))
+        XCTAssertNil(tracker.request(for: .saveMemory, currentRequest: "Запомни мой город, не сохраняй его.", now: now.addingTimeInterval(1)))
+    }
+
+    func testExplicitRefusalRevokesEarlierPendingMutations() {
+        for refusal in ["Не сохраняй это.", "Не запоминай.", "Теперь Москва, не меняй память.", "Не нужно сохранять.", "Не запоминать."] {
+            var tracker = PersonalIntentTracker()
+            tracker.accept(id: UUID(), text: "Запомни мой город.", now: now)
+            tracker.accept(id: UUID(), text: refusal, now: now.addingTimeInterval(1))
+            XCTAssertNil(tracker.request(for: .saveMemory, currentRequest: refusal, now: now.addingTimeInterval(1)), refusal)
+        }
+        for refusal in ["Не напоминай мне.", "Не создавай напоминание.", "Don't remind me."] {
+            var tracker = PersonalIntentTracker()
+            tracker.accept(id: UUID(), text: "Напомни купить молоко.", now: now)
+            tracker.accept(id: UUID(), text: refusal, now: now.addingTimeInterval(1))
+            XCTAssertNil(tracker.request(for: .createReminder, currentRequest: refusal, now: now.addingTimeInterval(1)), refusal)
+        }
+        for refusal in ["Не удаляй это из памяти.", "Не забывай мой адрес.", "Не нужно удалять.", "Don't forget that."] {
+            var tracker = PersonalIntentTracker()
+            tracker.accept(id: UUID(), text: "Забудь мой адрес.", now: now)
+            tracker.accept(id: UUID(), text: refusal, now: now.addingTimeInterval(1))
+            XCTAssertNil(tracker.request(for: .removeMemory, currentRequest: refusal, now: now.addingTimeInterval(1)), refusal)
+        }
+        var tracker = PersonalIntentTracker()
+        tracker.accept(id: UUID(), text: "Удали напоминание про молоко.", now: now)
+        tracker.accept(id: UUID(), text: "Не удаляй его.", now: now.addingTimeInterval(1))
+        XCTAssertNil(tracker.request(for: .changeReminder, currentRequest: "Не удаляй его.", now: now.addingTimeInterval(1)))
     }
 
     func testCancellationRevokesPendingAuthorizationInRussianAndEnglish() {

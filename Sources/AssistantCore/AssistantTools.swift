@@ -80,11 +80,39 @@ public enum PersonalRequestPolicy {
         ], negative: #"\b(?:не\s+(?:запоминай|запомни|сохраняй)|don't remember|do not remember)\b"#)
     }
 
+    public static func supportsMemoryUpdate(quote: String, currentRequest: String) -> Bool {
+        func normalized(_ value: String) -> String {
+            value.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
+        }
+        let request = normalized(currentRequest)
+        let evidence = normalized(quote)
+        guard !request.isEmpty, evidence.unicodeScalars.filter({ CharacterSet.alphanumerics.contains($0) }).count >= 2,
+              request.contains(evidence) else { return false }
+        return allowsMemoryMaintenance(currentRequest)
+    }
+
+    public static func allowsMemoryMaintenance(_ request: String) -> Bool {
+        guard !request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return request.lowercased().range(of: #"\b(?:не\s+(?:(?:надо|нужно)\s+)?(?:запоминай|запомни|запоминать|сохраняй|сохрани|сохранять|меняй|менять|изменяй|изменять|обновляй|обновлять)\b|don't\s+(?:remember|save|update)|do not\s+(?:remember|save|update))"#, options: .regularExpression) == nil
+    }
+
+    public static func rejectsMemoryRemoval(_ request: String) -> Bool {
+        request.lowercased().range(of: #"\b(?:не\s+(?:(?:надо|нужно)\s+)?(?:забывай|забудь|удаляй|удалять|удалить)\b|don't\s+(?:forget|delete)|do not\s+(?:forget|delete))"#, options: .regularExpression) != nil
+    }
+
     public static func allowsMemoryRemoval(_ request: String) -> Bool {
         matches(request, positive: [
             #"^(?:пожалуйста[, ]+)?(?:да[, ]+)?(?:забудь|удали из памяти|убери из памяти)\b"#,
             #"^(?:please\s+)?(?:forget|remove .* from memory|delete .* from memory)\b"#
         ], negative: #"\b(?:не\s+(?:забывай|удаляй)|don't forget|do not forget)\b"#)
+    }
+
+    public static func rejectsReminderCreation(_ request: String) -> Bool {
+        request.lowercased().range(of: #"\b(?:не\s+(?:напоминай|напомни|создавай|добавляй|ставь|создавать|создать|добавлять|добавить|ставить|поставить)\b|don't\s+remind|do not\s+remind)"#, options: .regularExpression) != nil
+    }
+
+    public static func rejectsReminderChange(_ request: String) -> Bool {
+        request.lowercased().range(of: #"\b(?:не\s+(?:удаляй|отменяй|меняй|переноси|удалять|отменять|менять|переносить)\b|don't\s+(?:delete|cancel|change|reschedule)|do not\s+(?:delete|cancel|change|reschedule))"#, options: .regularExpression) != nil
     }
 
     public static func allowsReminderCreation(_ request: String) -> Bool {
@@ -127,17 +155,19 @@ public enum PersonalTools {
     public static let definitions: [AssistantToolDefinition] = [
         AssistantToolDefinition(
             name: "manage_memory",
-            description: "Долговременная память Findy на iPhone: до \(AssistantLimits.memorySlots) записей по \(AssistantLimits.memoryNoteCharacters) символов. При заполнении предложи изменить или удалить запись. Сохраняй или удаляй сведения только по явной просьбе пользователя: «запомни», «забудь». Обычный рассказ о себе не является такой просьбой. Не сохраняй секретные ключи и пароли. Для поиска сохранённых сведений используй search.",
+            description: "Долговременная память Findy на iPhone: до \(AssistantLimits.memorySlots) записей по \(AssistantLimits.memoryNoteCharacters) символов. Новую запись создавай только по явной просьбе «запомни», удаляй только по просьбе «забудь». Если пользователь сообщил новое или исправил старое о себе, найди связанные записи через search и обнови существующую с update, передав точную цитату из текущей реплики в source_quote. Не обновляй по догадкам, цитатам других людей, гипотетическим примерам или при запрете сохранять; сохраняй непротиворечивые подробности. Если память полна, сначала компактно объедини только действительно связанные записи через merge, сохраняя непротиворечивые сведения в одной записи (до двух предложений), либо обнови устаревшее; если связанной записи нет, сохраняй новый факт через save: система заменит самую давно обновлённую запись и сообщит об этом. Не сохраняй секретные ключи и пароли. Для вопросов, где могут пригодиться сохранённые личные факты и предпочтения, сначала вызывай search с ключевыми словами. Для явного запроса перечислить память используй list; get возвращает полный текст записи по ID. Поиск возвращает до пяти наиболее подходящих записей; при отсутствии результата попробуй другие или более короткие ключевые слова либо list, прежде чем считать факт отсутствующим.",
             parameters: .init(properties: [
-                "action": .init("Действие с памятью.", values: ["save", "remove", "search"]),
-                "text": .init("Один краткий факт или предпочтение пользователя для save.", maxLength: AssistantLimits.memoryNoteCharacters),
-                "memory_id": .init("Точный ID существующего воспоминания для remove либо замены при save."),
-                "query": .init("Слова для поиска в памяти; пустая строка возвращает недавние сведения.", maxLength: 300)
+                "action": .init("Действие с памятью.", values: ["save", "update", "merge", "remove", "search", "list", "get"]),
+                "text": .init("Полный объединённый текст для merge, обновлённый текст для update или краткий факт для save.", maxLength: AssistantLimits.memoryNoteCharacters),
+                "memory_id": .init("Точный ID существующей записи для get, update, remove либо замены при save."),
+                "query": .init("Ключевые слова для поиска: используй основные слова о нужном факте, без полного вопроса.", maxLength: 300),
+                "merge_with_id": .init("Точный ID второй связанной записи для merge. Она объединяется в memory_id и удаляется после успешного слияния."),
+                "source_quote": .init("Для update: точная содержательная цитата из последней реплики пользователя, подтверждающая обновление; не цитируй слова ассистента.", maxLength: 500)
             ], required: ["action"])
         ),
         AssistantToolDefinition(
             name: "manage_reminders",
-            description: "Личные напоминания в приложении «Напоминания» на iPhone. Создавай, меняй и удаляй только по явной просьбе пользователя. Не обещай напоминание до успешного результата инструмента. Если время неоднозначно — сначала уточни. Повторяющиеся напоминания пока не поддерживаются.",
+            description: "Напоминания, созданные через Findy: новые в приложении «Напоминания» на iPhone и старые локальные. list не показывает все записи системного приложения. Создавай, меняй и удаляй только по явной просьбе пользователя. Не обещай напоминание до успешного результата инструмента. Если время неоднозначно — сначала уточни. Повторяющиеся напоминания пока не поддерживаются.",
             parameters: .init(properties: [
                 "action": .init("Действие с напоминаниями.", values: ["create", "list", "update", "complete", "delete"]),
                 "title": .init("Кратко, о чём напомнить.", maxLength: 300),

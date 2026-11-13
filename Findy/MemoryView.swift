@@ -67,7 +67,7 @@ struct MemoryView: View {
                     }
                 }
                 Section {
-                    Text("Сохранённые сведения помогают персонализировать ответы и передаются выбранной модели. Вы можете изменить или удалить их здесь.")
+                    Text("Ассистент обращается к памяти по необходимости. При заполнении новые записи заменяют самые давно обновлённые.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -84,7 +84,7 @@ struct MemoryView: View {
                         Label("Добавить факт", systemImage: "plus")
                     }
                     .accessibilityIdentifier("memory-add")
-                    .disabled(data.store == nil || data.memoryCount >= AssistantLimits.memorySlots)
+                    .disabled(data.store == nil)
                 }
             }
             .sheet(item: $editor) { MemoryEditorView(fact: $0.fact) }

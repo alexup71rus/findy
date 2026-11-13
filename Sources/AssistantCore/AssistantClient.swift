@@ -22,7 +22,7 @@ public struct AssistantClient: Sendable {
         try Task.checkCancellation()
         guard configuration.apiStyle != .realtime else { throw AssistantClientError.unsupportedAPIStyle }
         let endpoint = try configuration.validatedEndpoint()
-        guard messages.contains(where: { $0.role == .user && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+        guard messages.contains(where: { $0.role == .user && $0.hasContent }) else {
             throw AssistantClientError.emptyConversation
         }
 
@@ -30,7 +30,28 @@ public struct AssistantClient: Sendable {
         guard tools.isEmpty || toolHandler != nil else { throw AssistantToolLoopError.handlerMissing }
         let functionTools = try AssistantFunctionTools.wireDefinitions(tools, style: configuration.apiStyle)
         let selected = AssistantContext.recent(messages, limit: configuration.contextMessageCount)
-        let history = selected.map { AssistantWireValue.object(["role": .string($0.role.rawValue), "content": .string($0.text)]) }
+        try AssistantAttachmentWire.validate(selected, supportsImages: configuration.supportsImageInput)
+        let history = selected.map { message -> AssistantWireValue in
+            guard !message.attachments.isEmpty else {
+                return .object(["role": .string(message.role.rawValue), "content": .string(message.text)])
+            }
+            var parts: [AssistantWireValue] = []
+            let textType = configuration.apiStyle == .responses ? "input_text" : "text"
+            if !message.text.isEmpty { parts.append(.object(["type": .string(textType), "text": .string(message.text)])) }
+            for attachment in message.attachments {
+                if attachment.isImage {
+                    let url = AssistantAttachmentWire.dataURL(attachment)
+                    if configuration.apiStyle == .responses {
+                        parts.append(.object(["type": .string("input_image"), "image_url": .string(url)]))
+                    } else {
+                        parts.append(.object(["type": .string("image_url"), "image_url": .object(["url": .string(url)])]))
+                    }
+                } else {
+                    parts.append(.object(["type": .string(textType), "text": .string(AssistantAttachmentWire.text(attachment))]))
+                }
+            }
+            return .object(["role": .string(message.role.rawValue), "content": .array(parts)])
+        }
         let system = configuration.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         var chatInput = system.isEmpty ? history : [
             AssistantWireValue.object(["role": .string("system"), "content": .string(configuration.systemPrompt)])

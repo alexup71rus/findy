@@ -50,10 +50,12 @@ enum RealtimeTextReply {
         tools: [AssistantToolDefinition] = [], toolHandler: AssistantToolHandler? = nil,
         onUpdate: (@Sendable (AssistantReply) async -> Void)? = nil
     ) async throws -> AssistantReply {
-        guard let last = messages.last, last.role == .user else { throw AssistantClientError.emptyConversation }
+        let selected = AssistantContext.recent(messages, limit: configuration.contextMessageCount)
+        guard let last = selected.last, last.role == .user else { throw AssistantClientError.emptyConversation }
+        try AssistantAttachmentWire.validate(selected, supportsImages: configuration.supportsImageInput)
         let conversation = RealtimeTextConversation(configuration: configuration, apiKey: apiKey, tools: tools, toolHandler: toolHandler, onUpdate: onUpdate)
         return try await withThrowingTaskGroup(of: AssistantReply.self) { group in
-            group.addTask { try await conversation.run(history: Array(messages.dropLast()), text: last.text) }
+            group.addTask { try await conversation.run(history: Array(selected.dropLast()), message: last) }
             group.addTask {
                 try await Task.sleep(for: .seconds(configuration.supportsImageGeneration ? 300 : 60))
                 throw AssistantClientError.requestTimedOut
@@ -98,13 +100,13 @@ private actor RealtimeTextConversation {
         self.toolHandler = toolHandler
     }
 
-    func run(history: [AssistantMessage], text: String) async throws -> AssistantReply {
+    func run(history: [AssistantMessage], message: AssistantMessage) async throws -> AssistantReply {
         do {
             try await client.connect(configuration: configuration, apiKey: apiKey, history: history, outputAudio: false, tools: tools) { [weak self] event in
                 await self?.receive(event)
             }
             try Task.checkCancellation()
-            try await client.sendText(text)
+            try await client.sendMessage(message)
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
                     if let result = pendingResult { continuation.resume(with: result) }

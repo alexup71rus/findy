@@ -18,6 +18,16 @@ public struct StoredMessage: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct StoredMediaState: Sendable {
+    public let key: String
+    public let value: Data
+    public let messageID: UUID
+    public let createdAt: Date
+    public init(key: String, value: Data, messageID: UUID, createdAt: Date) {
+        self.key = key; self.value = value; self.messageID = messageID; self.createdAt = createdAt
+    }
+}
+
 public struct MemoryFact: Codable, Identifiable, Equatable, Sendable {
     public let id: UUID
     public var text: String

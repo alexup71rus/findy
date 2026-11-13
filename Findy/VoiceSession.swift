@@ -39,6 +39,8 @@ final class VoiceSession: NSObject, ObservableObject {
     @Published private(set) var status = "Сессия не запущена"
     @Published private(set) var isRunning = false
     @Published private(set) var isSendingText = false
+    @Published private(set) var isGeneratingImage = false
+    private var imageProgressID: UUID?
     @Published private(set) var lastError: String?
     @Published private(set) var transcript = ""
     @Published private(set) var lastReply = ""
@@ -156,14 +158,26 @@ final class VoiceSession: NSObject, ObservableObject {
     }
 
     @discardableResult
-    func sendText(_ input: String) -> Bool {
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSendingText, phase != .stopping else { return false }
+    func sendText(_ input: String, attachments: [AssistantAttachment] = []) -> Bool {
+        let entered = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (!entered.isEmpty || !attachments.isEmpty), !isSendingText, phase != .stopping else { return false }
+        guard attachments.count <= ChatAttachments.maximumCount else { lastError = ChatAttachmentError.tooMany.localizedDescription; return false }
+        if attachments.contains(where: \.isImage) && !AssistantSettings.shared.configuration.supportsImageInput {
+            lastError = AssistantAttachmentError.unsupportedImages.localizedDescription; return false
+        }
+        let text = entered.isEmpty ? "Посмотри вложения." : entered
         guard text.count <= AssistantLimits.inputCharacters else { lastError = AssistantClientError.inputTooLong.localizedDescription; return false }
         do { _ = try PersonalData.shared.requireStore() }
         catch { lastError = error.localizedDescription; return false }
         let identifier = UUID()
-        let userMessage = AssistantMessage(role: .user, text: text)
+        let userMessage = AssistantMessage(role: .user, text: text, attachments: attachments)
+        let messageScope = PersonalData.contextScope(settings: AssistantSettings.shared)
+        do { try persistMessage(userMessage, scope: messageScope) }
+        catch {
+            if (try? PersonalData.shared.requireStore().getMessage(id: userMessage.id)) != nil { try? timeline.deleteMessage(id: userMessage.id) }
+            lastError = error.localizedDescription
+            return false
+        }
         let replyID = UUID()
         textRequestID = identifier
         VoicePreviewPlayer.shared.stop()
@@ -186,7 +200,6 @@ final class VoiceSession: NSObject, ObservableObject {
                 try Task.checkCancellation()
                 guard self.textRequestID == identifier else { return }
                 try self.prepareAssistantConnection()
-                try self.persistMessage(userMessage)
                 WaitingMusicPlayer.shared.beginWaiting(voiceSession: false)
                 self.status = "Думаю…"
                 self.log.record("text.message.accepted", "characters=\(text.count)")
@@ -218,6 +231,8 @@ final class VoiceSession: NSObject, ObservableObject {
     func cancelTextReply() {
         guard isSendingText else { return }
         WaitingMusicPlayer.shared.stop()
+        imageProgressID = nil
+        isGeneratingImage = false
         commitStreamingReply()
         textRequestID = nil
         textResponseTask?.cancel()
@@ -332,9 +347,10 @@ final class VoiceSession: NSObject, ObservableObject {
         activeConfiguration = configuration
     }
 
-    private func persistMessage(_ message: AssistantMessage) throws {
-        _ = try timeline.accept(message, scope: activeScope)
-        try AssistantToolExecutor.registerUserMessage(message, scope: activeScope)
+    private func persistMessage(_ message: AssistantMessage, scope: String? = nil) throws {
+        let scope = scope ?? activeScope
+        _ = try timeline.accept(message, scope: scope)
+        try AssistantToolExecutor.registerUserMessage(message, scope: scope)
     }
 
     private func scheduleAudioAfterIntent(_ identifier: UUID) throws {
@@ -431,7 +447,7 @@ final class VoiceSession: NSObject, ObservableObject {
         }
         if let configuration = activeConfiguration, activeUsesProviderVoice {
             let realtime = try RealtimeVoiceSession(engine: engine, format: format, configuration: configuration,
-                apiKey: activeAPIKey, history: timeline.context(scope: activeScope, limit: configuration.contextMessageCount), silenceTimeout: silenceTimeoutSeconds,
+                apiKey: activeAPIKey, history: timeline.context(scope: activeScope, limit: configuration.contextMessageCount, includeAttachments: false), silenceTimeout: silenceTimeoutSeconds,
                 tools: PersonalTools.definitions + ContextTools.definitions)
             self.realtimeVoice = realtime
             realtime.onState = { [weak self] phase, status in
@@ -828,13 +844,27 @@ final class VoiceSession: NSObject, ObservableObject {
         WaitingMusicPlayer.shared.beginWaiting(voiceSession: false)
     }
 
+    private func withImageProgress<T>(_ operation: () async throws -> T) async throws -> T {
+        try Task.checkCancellation()
+        let identifier = UUID()
+        imageProgressID = identifier
+        isGeneratingImage = true
+        defer {
+            if imageProgressID == identifier {
+                imageProgressID = nil
+                isGeneratingImage = false
+            }
+        }
+        return try await operation()
+    }
+
     private func makeAssistantReply(voiceSession: UUID? = nil, onUpdate: (@Sendable (AssistantReply) async -> Void)? = nil) async throws -> AssistantReply {
         // The same history, provider, cancellation, and decoding path serves
         // typed messages and recognized speech. Audio is handled by the caller.
         guard let configuration = activeConfiguration else {
             throw ChatFailure(message: "Выберите провайдера и модель в настройках.")
         }
-        let context = try timeline.context(scope: activeScope, limit: configuration.contextMessageCount)
+        let context = try timeline.context(scope: activeScope, limit: configuration.contextMessageCount, includeAttachments: voiceSession == nil)
         #if DEBUG && targetEnvironment(simulator)
         // Isolated UI automation has no provider traffic. This hook is absent
         // from device and release builds and still exercises preparation,
@@ -842,8 +872,12 @@ final class VoiceSession: NSObject, ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("--ui-local-replies"),
            let value = ProcessInfo.processInfo.environment["FINDY_UI_TEST_SESSION"],
            UUID(uuidString: value) != nil {
-            if context.last?.text == "--image-fixture" {
-                try GeneratedImages.saveFixture(scope: activeScope)
+            if context.last?.text == "imagefixture" {
+                try await withImageProgress {
+                    try await Task.sleep(for: .seconds(3))
+                    try Task.checkCancellation()
+                    try GeneratedImages.saveFixture(scope: activeScope)
+                }
             }
             let reply = AssistantReply(text: ConversationRules.reply(to: context.last?.text ?? ""))
             let characters = Array(reply.text)
@@ -851,7 +885,7 @@ final class VoiceSession: NSObject, ObservableObject {
                 try Task.checkCancellation()
                 let count = max(1, characters.count * step / 20)
                 await onUpdate?(AssistantReply(text: String(characters.prefix(count))))
-                try await Task.sleep(for: .milliseconds(100))
+                try await Task.sleep(for: .milliseconds(ProcessInfo.processInfo.arguments.contains("--ui-slow-stream") ? 400 : 100))
             }
             return reply
         }
@@ -859,12 +893,17 @@ final class VoiceSession: NSObject, ObservableObject {
         let key = activeAPIKey
         let requestMessages = context
         let userRequest = context.last(where: { $0.role == .user })?.text ?? ""
-        let tools = (try AssistantToolExecutor.hasPendingRequest(scope: activeScope) ? PersonalTools.definitions : PersonalData.shared.tools(for: userRequest, realtime: configuration.apiStyle == .realtime)) + ContextTools.definitions + (voiceSession == nil && configuration.supportsImageGeneration ? [GeneratedImages.tool] : [])
+        let tools = PersonalData.shared.tools(for: userRequest, realtime: configuration.apiStyle == .realtime) + ContextTools.definitions + (voiceSession == nil && configuration.supportsImageGeneration ? [GeneratedImages.tool] : [])
         let scope = activeScope
         let handler: AssistantToolHandler = { [weak self] call in
             if call.name == "web_search" {
                 if let voiceSession { await self?.playCue(.search, session: voiceSession) }
                 else { await self?.beginTextSearchMusic() }
+            }
+            if call.name == "generate_image", let self {
+                return try await self.withImageProgress {
+                    try await AssistantToolExecutor.execute(call, userRequest: userRequest, scope: scope, configuration: configuration, apiKey: key)
+                }
             }
             return try await AssistantToolExecutor.execute(call, userRequest: userRequest, scope: scope, configuration: configuration, apiKey: key)
         }

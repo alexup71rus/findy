@@ -45,6 +45,15 @@ struct ProviderEditorView: View {
                 modelsSection
                 if draft.apiStyle == .realtime { realtimeVoiceSection }
                 if draft.configuration(for: "validation").supportsImageGeneration { imageSection }
+                if !draft.configuration(for: "validation").supportsImageGeneration {
+                    Section {
+                        Toggle("Принимает изображения", isOn: $draft.imageInputEnabled)
+                            .accessibilityIdentifier("provider-image-input")
+                    } footer: {
+                        Text("Включите, если провайдер и выбранная модель поддерживают фото во входящих сообщениях.")
+                    }
+                    .disabled(editingDisabled)
+                }
                 behaviorSection
                 connectionSection
             }

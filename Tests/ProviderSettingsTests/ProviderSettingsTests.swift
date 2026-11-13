@@ -44,7 +44,7 @@ final class ProviderSettingsTests: XCTestCase, @unchecked Sendable {
             var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
             object.removeValue(forKey: "promptPreset")
             object.removeValue(forKey: "customSystemPrompt")
-            for prompt: String? in [nil, AssistantConfiguration.legacySystemPrompt, "Пользовательский текст", String(repeating: "я", count: 501)] {
+            for prompt: String? in [nil, AssistantConfiguration.legacySystemPrompt, "Пользовательский текст", String(repeating: "я", count: 1501)] {
                 object["systemPrompt"] = prompt
                 let decoded = try JSONDecoder().decode(AssistantProvider.self, from: JSONSerialization.data(withJSONObject: object))
                 let isDefault = prompt == nil || prompt == AssistantConfiguration.legacySystemPrompt
@@ -52,6 +52,28 @@ final class ProviderSettingsTests: XCTestCase, @unchecked Sendable {
                 XCTAssertEqual(decoded.customSystemPrompt, isDefault ? "" : (prompt ?? ""))
                 XCTAssertEqual(decoded.systemPrompt, isDefault ? AssistantConfiguration.defaultSystemPrompt : (prompt ?? ""))
             }
+        }
+    }
+
+    func testCustomPromptAccepts1500CharactersAndRejects1501WithoutChangingSavedValue() async throws {
+        try await MainActor.run {
+            let suite = "Findy.PromptBoundary." + UUID().uuidString
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let keys = MemoryKeys()
+            let settings = AssistantSettings(defaults: defaults, keyStore: keys)
+            let maximum = String(repeating: "я", count: 1499) + "👨‍👩‍👧‍👦"
+            var provider = AssistantProvider(name: "Local", endpoint: "http://127.0.0.1:11434/v1", models: ["model"], systemPrompt: maximum)
+            try settings.upsertProvider(provider, apiKey: nil)
+            XCTAssertEqual(AssistantLimits.systemPromptCharacters, 1500)
+            XCTAssertEqual(AssistantSettings(defaults: defaults, keyStore: keys).selectedProvider?.customSystemPrompt, maximum)
+            provider.customSystemPrompt += "ю"
+            XCTAssertThrowsError(try settings.upsertProvider(provider, apiKey: nil)) { error in
+                XCTAssertTrue(error.localizedDescription.contains("1500"))
+            }
+            XCTAssertEqual(AssistantSettings(defaults: defaults, keyStore: keys).selectedProvider?.customSystemPrompt, maximum)
+            XCTAssertEqual(AssistantLimits.inputCharacters, 500)
+            XCTAssertEqual(AssistantLimits.memoryNoteCharacters, 500)
         }
     }
 

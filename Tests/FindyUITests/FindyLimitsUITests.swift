@@ -102,15 +102,15 @@ final class FindyLimitsUITests: XCTestCase {
         let counter = app.staticTexts["system-prompt-character-count"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         let original = editor.value as? String ?? ""
-        XCTAssertEqual(original.count, 501)
-        XCTAssertEqual(counter.value as? String, "501 из 500")
+        XCTAssertEqual(original.count, 1501)
+        XCTAssertEqual((counter.value as? String)?.filter { !$0.isWhitespace }, "1501из1500")
         XCTAssertFalse(app.buttons["system-prompt-save"].isEnabled)
         // Tap inside the first text line rather than the editor's blank centre.
         editor.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.03)).tap()
         editor.typeText(XCUIKeyboardKey.delete.rawValue)
-        XCTAssertEqual(counter.value as? String, "500 из 500")
+        XCTAssertEqual((counter.value as? String)?.filter { !$0.isWhitespace }, "1500из1500")
         XCTAssertTrue(app.buttons["system-prompt-save"].isEnabled)
-        capture("Limits prompt keyboard500", app: app)
+        capture("Limits prompt keyboard1500", app: app)
         app.buttons["system-prompt-cancel"].tap()
         row.tap()
         XCTAssertEqual(editor.value as? String, original)
@@ -118,7 +118,7 @@ final class FindyLimitsUITests: XCTestCase {
         app.buttons["Полезный"].tap()
         XCTAssertTrue(app.buttons["system-prompt-save"].isEnabled)
         let restored = editor.value as? String ?? ""
-        XCTAssertLessThanOrEqual(restored.count, 500)
+        XCTAssertLessThanOrEqual(restored.count, 1500)
         app.buttons["system-prompt-save"].tap()
         app.terminate(); app.launch()
         XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
@@ -133,8 +133,8 @@ final class FindyLimitsUITests: XCTestCase {
         let app = launch(["--seed-ui-legacy-memory", "--show-memory"])
         let count = app.staticTexts["memory-slot-count"]
         XCTAssertTrue(count.waitForExistence(timeout: 5))
-        XCTAssertEqual(count.value as? String, "16 из 15")
-        XCTAssertFalse(app.buttons["memory-add"].isEnabled)
+        XCTAssertEqual(count.value as? String, "31 из 30")
+        XCTAssertTrue(app.buttons["memory-add"].isEnabled)
         let legacy = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Наследие ")).firstMatch
         XCTAssertTrue(legacy.waitForExistence(timeout: 5))
         legacy.press(forDuration: 1)
@@ -152,18 +152,18 @@ final class FindyLimitsUITests: XCTestCase {
         XCTAssertLessThanOrEqual(characterCount.frame.maxY, app.keyboards.firstMatch.frame.minY)
         capture("Limits memory editing grandfathered501", app: app)
         app.buttons["memory-save"].tap()
-        XCTAssertEqual(count.value as? String, "16 из 15")
-        XCTAssertFalse(app.buttons["memory-add"].isEnabled)
+        XCTAssertEqual(count.value as? String, "31 из 30")
+        XCTAssertTrue(app.buttons["memory-add"].isEnabled)
     }
 
-    func testExactly15MemoriesDisablesAddAndAllowsEditing() {
+    func testFullMemoryAllowsManualAddAndReplacesOldestUpdatedRecord() {
         let app = launch(["--seed-ui-memory-cap", "--show-memory"])
         let count = app.staticTexts["memory-slot-count"]
         XCTAssertTrue(count.waitForExistence(timeout: 5))
-        XCTAssertEqual(count.value as? String, "15 из 15")
-        XCTAssertFalse(app.buttons["memory-add"].isEnabled)
-        capture("Limits15 memory slots", app: app)
-        let fact = app.staticTexts["Тестовый факт 15"]
+        XCTAssertEqual(count.value as? String, "30 из 30")
+        XCTAssertTrue(app.buttons["memory-add"].isEnabled)
+        capture("Limits30 memory slots", app: app)
+        let fact = app.staticTexts["Тестовый факт 30"]
         XCTAssertTrue(fact.waitForExistence(timeout: 5))
         fact.press(forDuration: 1)
         app.buttons["Изменить"].tap()
@@ -172,8 +172,22 @@ final class FindyLimitsUITests: XCTestCase {
         editor.typeText(" изменён")
         XCTAssertTrue(app.buttons["memory-save"].isEnabled)
         app.buttons["memory-save"].tap()
-        XCTAssertEqual(count.value as? String, "15 из 15")
-        XCTAssertFalse(app.buttons["memory-add"].isEnabled)
+        XCTAssertEqual(count.value as? String, "30 из 30")
+        XCTAssertTrue(app.buttons["memory-add"].isEnabled)
+        app.buttons["memory-add"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("Новая запись вместо самой старой")
+        app.buttons["memory-save"].tap()
+        XCTAssertTrue(app.staticTexts["Новая запись вместо самой старой"].waitForExistence(timeout: 5))
+        XCTAssertEqual(count.value as? String, "30 из 30")
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Overflow is handled automatically without a confirmation")
+        capture("Full memory manual add replaces oldest", app: app)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.staticTexts["Новая запись вместо самой старой"].waitForExistence(timeout: 5))
+        XCTAssertEqual(count.value as? String, "30 из 30")
+        let search = app.searchFields.firstMatch
+        search.tap(); search.typeText("Самая старая запись")
+        XCTAssertFalse(app.staticTexts["Самая старая запись"].exists, "The oldest last-updated record is replaced")
     }
 
     func testContextMessagePickerPersistsBothEndpoints() {

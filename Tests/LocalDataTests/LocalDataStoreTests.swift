@@ -204,12 +204,57 @@ final class LocalDataStoreTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    func testMediaStateUpdatesAreAtomicAndKeepOriginalMessageDate() throws {
+        try withStore { store, url in
+            let old = AssistantMessage(role: .user, text: "Старое сообщение")
+            let recent = AssistantMessage(role: .assistant, text: "Новое сообщение")
+            let original = Date(timeIntervalSince1970: 100)
+            _ = try store.upsertMessage(old, scope: "test", createdAt: original)
+            _ = try store.upsertMessage(recent, scope: "test", createdAt: Date(timeIntervalSince1970: 200))
+            let firstKey = "attachment." + old.id.uuidString.lowercased()
+            let secondKey = "image." + recent.id.uuidString.lowercased()
+            try store.setLocalState(Data("first".utf8), for: firstKey)
+            try store.setLocalState(Data("second".utf8), for: secondKey)
+            XCTAssertEqual(try store.mediaStates().first?.createdAt, original)
+            try fixtureSQL(url, "CREATE TRIGGER reject_media BEFORE UPDATE ON local_state BEGIN SELECT RAISE(ABORT, 'fixture rejection'); END;")
+            XCTAssertThrowsError(try store.updateMediaStates([firstKey: Data("removed".utf8), secondKey: Data("removed".utf8)]))
+            XCTAssertEqual(try store.localState(for: firstKey), Data("first".utf8))
+            XCTAssertEqual(try store.localState(for: secondKey), Data("second".utf8))
+            try fixtureSQL(url, "DROP TRIGGER reject_media")
+            try store.updateMediaStates([firstKey: Data("removed".utf8), secondKey: Data("removed".utf8)])
+            XCTAssertEqual(try store.localState(for: firstKey), Data("removed".utf8))
+            XCTAssertEqual(try store.getMessage(id: old.id)?.message.text, "Старое сообщение")
+        }
+    }
+
+    func testMemorySearchRanksPhraseThenTokenOverlapAndNormalizesText() throws {
+        try withStore { store, _ in
+            let phrase = try store.upsertMemory(MemoryFact(text: "Люблю чёрный кофе утром", updatedAt: Date(timeIntervalSince1970: 1)))
+            let overlap = try store.upsertMemory(MemoryFact(text: "Утром предпочитаю кофе и зелёный чай", updatedAt: Date(timeIntervalSince1970: 3)))
+            let single = try store.upsertMemory(MemoryFact(text: "Пью кофе после обеда", updatedAt: Date(timeIntervalSince1970: 4)))
+            XCTAssertEqual(try store.searchMemories("чЕРНЫЙ кофе утром").map(\.id), [phrase.id, overlap.id, single.id])
+            XCTAssertEqual(try store.searchMemories("чай неизвестное").first?.id, overlap.id)
+            XCTAssertEqual(try store.searchMemories("кофе", limit: 2).count, 2)
+            XCTAssertEqual(try store.searchMemories("").first?.id, single.id)
+            XCTAssertTrue(try store.searchMemories("неизвестно").isEmpty)
+            XCTAssertTrue(try store.searchMemories("что это").isEmpty)
+            let emoji = try store.upsertMemory(MemoryFact(text: "Люблю 🐈"))
+            XCTAssertEqual(try store.searchMemories("🐈").first?.id, emoji.id)
+            let cat = try store.upsertMemory(MemoryFact(text: "Кошка Мурка"))
+            XCTAssertEqual(try store.searchMemories("кошки").first?.id, cat.id)
+            let allergy = try store.upsertMemory(MemoryFact(text: "Аллергия на клубнику"))
+            XCTAssertEqual(try store.searchMemories("аллергии").first?.id, allergy.id)
+            let work = try store.upsertMemory(MemoryFact(text: "Работает в мастерской"))
+            XCTAssertEqual(try store.searchMemories("работаю").first?.id, work.id)
+        }
+    }
+
     func testMemoryCapacityAllowsDeduplicationEditingAndReplacementAfterDeletion() throws {
         try withStore { store, _ in
             let records = try (0..<AssistantLimits.memorySlots).map { try store.upsertMemory(MemoryFact(text: "Факт \($0)")) }
-            XCTAssertEqual(try store.memoryCount(), 15)
-            XCTAssertThrowsError(try store.upsertMemory(MemoryFact(text: "Шестнадцатый факт")))
-            XCTAssertEqual(try store.memoryCount(), 15)
+            XCTAssertEqual(try store.memoryCount(), AssistantLimits.memorySlots)
+            XCTAssertThrowsError(try store.upsertMemory(MemoryFact(text: "Факт сверх лимита")))
+            XCTAssertEqual(try store.memoryCount(), AssistantLimits.memorySlots)
             XCTAssertEqual(try store.upsertMemory(MemoryFact(text: "  ФАКТ 0 ")).id, records[0].id)
             var edited = records[0]
             edited.text = "Изменённый факт"
@@ -217,7 +262,51 @@ final class LocalDataStoreTests: XCTestCase, @unchecked Sendable {
             try store.deleteMemory(id: records[1].id)
             let replacement = try store.upsertMemory(MemoryFact(text: "Новое сведение"))
             XCTAssertEqual(try store.getMemory(id: replacement.id), replacement)
-            XCTAssertEqual(try store.memoryCount(), 15)
+            XCTAssertEqual(try store.memoryCount(), AssistantLimits.memorySlots)
+        }
+    }
+
+    func testFullMemoryEvictsOldestOnlyForAuthorizedInsertionAndRollsBackFailures() throws {
+        try withStore { store, url in
+            let initial = try (0..<AssistantLimits.memorySlots).map { i in
+                try store.upsertMemory(MemoryFact(text: "Факт \(i)", updatedAt: Date(timeIntervalSince1970: Double(i + 1))))
+            }
+            let duplicate = try store.upsertMemory(MemoryFact(text: "Факт 0"), evictOldestWhenFull: true)
+            XCTAssertFalse(duplicate.evicted)
+            XCTAssertEqual(duplicate.memory.id, initial[0].id)
+            XCTAssertThrowsError(try store.upsertMemory(MemoryFact(text: String(repeating: "я", count: AssistantLimits.memoryNoteCharacters + 1)), evictOldestWhenFull: true))
+            try fixtureSQL(url, "CREATE TRIGGER reject_eviction_insert BEFORE INSERT ON memories BEGIN SELECT RAISE(ABORT, 'fixture rejection'); END;")
+            XCTAssertThrowsError(try store.upsertMemory(MemoryFact(text: "Ошибка записи"), evictOldestWhenFull: true))
+            XCTAssertNotNil(try store.getMemory(id: initial[0].id))
+            try fixtureSQL(url, "DROP TRIGGER reject_eviction_insert")
+            let replacement = try store.upsertMemory(MemoryFact(text: "Новый факт"), evictOldestWhenFull: true)
+            XCTAssertTrue(replacement.evicted)
+            XCTAssertNil(try store.getMemory(id: initial[0].id))
+            XCTAssertEqual(try store.memoryCount(), AssistantLimits.memorySlots)
+            XCTAssertNotNil(try store.getMemory(id: initial[1].id))
+        }
+    }
+
+    func testMergeMemoriesIsAtomicAndRejectsInvalidInputs() throws {
+        try withStore { store, url in
+            let first = try store.upsertMemory(MemoryFact(text: "Любит чай"))
+            let second = try store.upsertMemory(MemoryFact(text: "Любит кофе"))
+            let unrelated = try store.upsertMemory(MemoryFact(text: "Занимается бегом"))
+            XCTAssertThrowsError(try store.mergeMemories(keeping: first.id, removing: first.id, text: "Новый текст"))
+            XCTAssertThrowsError(try store.mergeMemories(keeping: first.id, removing: UUID(), text: "Новый текст"))
+            XCTAssertThrowsError(try store.mergeMemories(keeping: first.id, removing: second.id, text: unrelated.text))
+            XCTAssertThrowsError(try store.mergeMemories(keeping: first.id, removing: second.id, text: String(repeating: "а", count: AssistantLimits.memoryNoteCharacters + 1)))
+            try fixtureSQL(url, "CREATE TRIGGER reject_merge_update BEFORE UPDATE ON memories BEGIN SELECT RAISE(ABORT, 'fixture rejection'); END;")
+            XCTAssertThrowsError(try store.mergeMemories(keeping: first.id, removing: second.id, text: "Любит чай и кофе"))
+            XCTAssertNotNil(try store.getMemory(id: second.id))
+            XCTAssertEqual(try store.getMemory(id: first.id), first)
+            try fixtureSQL(url, "DROP TRIGGER reject_merge_update")
+            let merged = try store.mergeMemories(keeping: first.id, removing: second.id, text: "Любит чай и кофе")
+            XCTAssertEqual(merged.id, first.id)
+            XCTAssertEqual(merged.text, "Любит чай и кофе")
+            XCTAssertNil(try store.getMemory(id: second.id))
+            XCTAssertEqual(try store.memoryCount(), 2)
+            XCTAssertEqual(try store.getMemory(id: unrelated.id), unrelated)
         }
     }
 
@@ -251,7 +340,7 @@ final class LocalDataStoreTests: XCTestCase, @unchecked Sendable {
             XCTAssertEqual(try reopened.memories().count, 200)
             XCTAssertEqual(try reopened.allMemories().count, 205)
             XCTAssertEqual(try reopened.getMemory(id: id)?.text, legacyText)
-            XCTAssertEqual(try reopened.searchMemories("legacy-0").first?.text, legacyText)
+            XCTAssertEqual(try reopened.searchMemories("яяяяя").first?.text, legacyText)
             XCTAssertThrowsError(try reopened.upsertMemory(MemoryFact(text: "Новый факт")))
             var edited = try XCTUnwrap(reopened.getMemory(id: id))
             XCTAssertThrowsError(try reopened.upsertMemory(edited))

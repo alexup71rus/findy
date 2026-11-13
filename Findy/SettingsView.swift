@@ -335,6 +335,10 @@ private struct AdvancedSettingsView: View {
                 Button("Открыть настройки iPhone") { session.openSettings() }
             }
             Section {
+                NavigationLink { MediaStorageView() } label: { Label("Файлы и изображения", systemImage: "externaldrive") }
+                    .accessibilityIdentifier("media-storage-settings")
+            }
+            Section {
                 Button("Сбросить контекст разговора") { confirmingReset = true }
                     .disabled(isBusy)
             } footer: {
@@ -378,5 +382,82 @@ private struct AdvancedSettingsView: View {
             Button("Понятно", role: .cancel) {}
         } message: { Text(actionError) }
         .onAppear { session.refreshReadiness() }
+    }
+}
+
+
+@MainActor
+private struct MediaStorageView: View {
+    @ObservedObject private var media = MediaStorage.shared
+    @ObservedObject private var session = VoiceSession.shared
+    @AppStorage(MediaStorage.preferenceKey) private var retentionDays = 0
+    @State private var pendingDays: Int?
+    @State private var confirmingClear = false
+    @State private var summary: MediaStorage.Summary?
+    @State private var error: String?
+    private var isBusy: Bool { session.isRunning || session.isSendingText || session.phase != .idle }
+
+    var body: some View {
+        List {
+            Section {
+                Picker("Хранить файлы", selection: Binding(
+                    get: { MediaStorage.choices.contains(retentionDays) ? retentionDays : 0 },
+                    set: { value in
+                        if value == 0 { retentionDays = 0 }
+                        else if value != retentionDays { pendingDays = value }
+                    }
+                )) {
+                    Text("Всегда").tag(0)
+                    Text("7 дней").tag(7)
+                    Text("30 дней").tag(30)
+                    Text("60 дней").tag(60)
+                    Text("90 дней").tag(90)
+                }
+                .disabled(isBusy)
+                .accessibilityIdentifier("media-retention")
+                if let summary {
+                    LabeledContent("На устройстве", value: "\(summary.count) · \(ByteCountFormatter.string(fromByteCount: summary.bytes, countStyle: .file))")
+                }
+                Button("Удалить файлы и изображения", role: .destructive) { confirmingClear = true }
+                    .disabled(isBusy || summary?.hasEntries != true)
+                    .accessibilityIdentifier("media-clear")
+            } footer: {
+                Text("Удаляются только копии в Findy; оригиналы в Фото и Файлах сохраняются. Автоочистка выполняется при открытии приложения и возвращении в него. Сообщения, память и напоминания останутся.")
+            }
+            if isBusy { Section { Text("Завершите разговор или дождитесь ответа, чтобы очистить файлы.").foregroundStyle(.secondary) } }
+            if let error = media.lastError { Section { Text(error).foregroundStyle(.red) } }
+        }
+        .navigationTitle("Файлы и изображения")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: refresh)
+        .confirmationDialog("Включить автоочистку?", isPresented: Binding(get: { pendingDays != nil }, set: { if !$0 { pendingDays = nil } }), titleVisibility: .visible) {
+            Button("Включить и очистить старые файлы", role: .destructive) {
+                guard !isBusy, let days = pendingDays else { return }
+                retentionDays = days
+                pendingDays = nil
+                media.runAutomaticIfIdle()
+                refresh()
+            }
+        } message: {
+            if let pendingDays { Text("Файлы старше \(pendingDays) дней будут удалены из Findy сейчас. Текст сообщений сохранится.") }
+        }
+        .confirmationDialog("Удалить файлы и изображения?", isPresented: $confirmingClear, titleVisibility: .visible) {
+            Button("Удалить", role: .destructive) {
+                guard !isBusy else { return }
+                do {
+                    defer { ChatTimeline.shared.mediaDidChange() }
+                    _ = try media.clean(store: PersonalData.shared.requireStore(), cutoff: nil)
+                    refresh()
+                } catch { self.error = error.localizedDescription; refresh() }
+            }
+        } message: { Text("Копии файлов и созданные изображения будут удалены из Findy. Сообщения и оригиналы останутся.") }
+        .alert("Не удалось очистить файлы", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            Button("Понятно", role: .cancel) { error = nil }
+        } message: { Text(error ?? "") }
+    }
+
+    private func refresh() {
+        do { summary = try media.summary(store: PersonalData.shared.requireStore()) }
+        catch { self.error = error.localizedDescription }
     }
 }

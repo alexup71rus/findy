@@ -151,7 +151,8 @@ final class AssistantSettings: ObservableObject {
             realtimeVoice: provider.realtimeVoice,
             webSearchModel: provider.webSearchModel,
             contextMessageCount: contextMessageCount,
-            imageModel: provider.imageModel
+            imageModel: provider.imageModel,
+            imageInputEnabled: provider.imageInputEnabled
         )
     }
 
@@ -174,7 +175,9 @@ final class AssistantSettings: ObservableObject {
             systemPrompt: original.systemPrompt,
             webSearchEnabled: original.webSearchEnabled,
             realtimeVoice: "marin",
-            webSearchModel: original.apiStyle == .responses ? configuration.model : "gpt-6-luna"
+            webSearchModel: original.apiStyle == .responses ? configuration.model : "gpt-6-luna",
+            imageModel: original.imageModel,
+            imageInputEnabled: original.imageInputEnabled
         )
         provider.promptPreset = original.promptPreset
         provider.customSystemPrompt = original.customSystemPrompt
@@ -191,7 +194,7 @@ final class AssistantSettings: ObservableObject {
         guard !saved.name.isEmpty else { throw SettingsFailure(message: "Укажите название провайдера.") }
         let existingPrompt = providers.first(where: { $0.id == saved.id })?.customSystemPrompt
         guard saved.customSystemPrompt.count <= AssistantLimits.systemPromptCharacters || saved.customSystemPrompt == existingPrompt || saved.customSystemPrompt == inheritedCustomPrompt else {
-            throw SettingsFailure(message: "Системная инструкция слишком длинная. Сократите её до 500 символов.")
+            throw SettingsFailure(message: "Системная инструкция слишком длинная. Сократите её до \(AssistantLimits.systemPromptCharacters) символов.")
         }
         var seen = Set<String>()
         saved.models = saved.models.compactMap {

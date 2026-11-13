@@ -21,9 +21,14 @@ struct FindyApp: App {
         WindowGroup {
             ContentView()
                 .task {
+                    MediaStorage.shared.runAutomaticIfIdle()
                     #if DEBUG
                     #if targetEnvironment(simulator)
                     await ReminderScheduler.runNativeSmokeIfRequested()
+                    await AssistantToolExecutor.runMemorySmokeIfRequested()
+                    await AssistantToolExecutor.runMemoryUpdateSmokeIfRequested()
+                    ChatAttachments.runSmokeIfRequested()
+                    MediaStorage.shared.runSmokeIfRequested()
                     #endif
                     await DebugRealtimeProbe.runMicrophoneGraphIfRequested()
                     await DebugRealtimeProbe.runIfRequested()
@@ -35,8 +40,10 @@ struct FindyApp: App {
                         VoiceSession.shared.refreshReadiness()
                         SpeechVoiceCatalog.shared.refresh()
                         Task { await PersonalData.shared.refresh() }
+                        MediaStorage.shared.runAutomaticIfIdle()
                     }
                 }
+                .modifier(MediaRetentionLifecycle())
         }
     }
 }

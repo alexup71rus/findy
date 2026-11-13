@@ -23,7 +23,16 @@ public struct PersonalIntentTracker: Codable, Sendable {
     public init() {}
 
     public mutating func accept(id: UUID, text: String, now: Date = Date()) {
-        if requestID == id { currentText = text; return }
+        if requestID == id {
+            // A revised final transcript for the same server item can contain
+            // a refusal that was absent from the first version.
+            if !PersonalRequestPolicy.allowsMemoryMaintenance(text) { origins[.saveMemory] = nil }
+            if PersonalRequestPolicy.rejectsMemoryRemoval(text) { origins[.removeMemory] = nil }
+            if PersonalRequestPolicy.rejectsReminderCreation(text) { origins[.createReminder] = nil }
+            if PersonalRequestPolicy.rejectsReminderChange(text) { origins[.changeReminder] = nil }
+            currentText = text
+            return
+        }
         for action in consumed { origins[action] = nil }
         consumed = []
         if now >= expiresAt || followupsRemaining == 0 { origins = [:] }
@@ -41,6 +50,12 @@ public struct PersonalIntentTracker: Codable, Sendable {
                 followupsRemaining = 4
                 expiresAt = now.addingTimeInterval(180)
             } else {
+                // A later explicit refusal revokes pending consent rather than
+                // being treated as an ordinary clarification.
+                if !PersonalRequestPolicy.allowsMemoryMaintenance(text) { origins[.saveMemory] = nil }
+                if PersonalRequestPolicy.rejectsMemoryRemoval(text) { origins[.removeMemory] = nil }
+                if PersonalRequestPolicy.rejectsReminderCreation(text) { origins[.createReminder] = nil }
+                if PersonalRequestPolicy.rejectsReminderChange(text) { origins[.changeReminder] = nil }
                 followupsRemaining = max(0, followupsRemaining - 1)
             }
         }
@@ -51,6 +66,11 @@ public struct PersonalIntentTracker: Codable, Sendable {
     public func request(for action: PersonalMutation, currentRequest: String, now: Date = Date()) -> String? {
         guard now < expiresAt, currentText == currentRequest, let origin = origins[action] else { return nil }
         return origin == currentRequest ? currentRequest : origin + "\nУточнение пользователя: " + currentRequest
+    }
+
+    /// The tool may use only the latest recorded user utterance as evidence.
+    public func isCurrentUserRequest(_ request: String) -> Bool {
+        !request.isEmpty && request == currentText
     }
 
     public mutating func didComplete(_ action: PersonalMutation) { consumed.insert(action) }

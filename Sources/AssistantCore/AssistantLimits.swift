@@ -3,9 +3,9 @@ import Foundation
 /// Shared limits for editable fields and the message-count setting.
 public enum AssistantLimits {
     public static let inputCharacters = 500
-    public static let systemPromptCharacters = 500
+    public static let systemPromptCharacters = 1500
     public static let memoryNoteCharacters = 500
-    public static let memorySlots = 15
+    public static let memorySlots = 30
     public static let contextMessageMinimum = 5
     public static let contextMessageMaximum = 50
     public static let contextMessageStep = 5

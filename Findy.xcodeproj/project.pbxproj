@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FEFA1020AA114444AA000005 /* MediaStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEFA1020AA114444AA000006 /* MediaStorage.swift */; };
+		FEFA1020AA114444AA000003 /* AttachmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEFA1020AA114444AA000004 /* AttachmentViews.swift */; };
+		FEFA1020AA114444AA000001 /* ChatAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEFA1020AA114444AA000002 /* ChatAttachments.swift */; };
 		01549D00C755456B17CCBE58 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579C447AF244E5428D6F0D9B /* ContentView.swift */; };
 		06CCCC50CB06825EEB1A8061 /* RealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05C99DABFA269261530E033 /* RealtimeClient.swift */; };
 		0A2F88EC10683061730ABA7D /* AssistantConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1484B6B43073E84D26896EB /* AssistantConfiguration.swift */; };
@@ -104,6 +107,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FEFA1020AA114444AA000006 /* MediaStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaStorage.swift; sourceTree = "<group>"; };
+		FEFA1020AA114444AA000004 /* AttachmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentViews.swift; sourceTree = "<group>"; };
+		FEFA1020AA114444AA000002 /* ChatAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachments.swift; sourceTree = "<group>"; };
 		05BCB222B1EEEFF2C8C11FFF /* FindyLimitsUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FindyLimitsUITests.swift; sourceTree = "<group>"; };
 		0B22278059EC977DDD768DA1 /* RealtimeVoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeVoiceSession.swift; sourceTree = "<group>"; };
 		0FDDEA9132158EDDC7AC33EE /* MemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryView.swift; sourceTree = "<group>"; };
@@ -281,6 +287,9 @@
 				9C7E38729A3048A8A38EEEDD /* ImageGenerationClient.swift */,
 				59B550E74E5E49CA9609D478 /* GeneratedImageView.swift */,
 				17E622E15FFC42D6896B3AFD /* GeneratedImages.swift */,
+				FEFA1020AA114444AA000002 /* ChatAttachments.swift */,
+				FEFA1020AA114444AA000006 /* MediaStorage.swift */,
+				FEFA1020AA114444AA000004 /* AttachmentViews.swift */,
 				0854777CE0CA44098602592D /* waiting-3.mp3 */,
 				9C41AF84A3C246D080BD5787 /* waiting-2.mp3 */,
 				D1223CBE5F964EFF9E41AEF7 /* waiting-1.mp3 */,
@@ -559,6 +568,9 @@
 				69AD15C1C46E405881E52299 /* ImageGenerationClient.swift in Sources */,
 				F3B407746AAF4E328136EC95 /* GeneratedImageView.swift in Sources */,
 				2B21C6F29FEA494F931D98EF /* GeneratedImages.swift in Sources */,
+				FEFA1020AA114444AA000001 /* ChatAttachments.swift in Sources */,
+				FEFA1020AA114444AA000005 /* MediaStorage.swift in Sources */,
+				FEFA1020AA114444AA000003 /* AttachmentViews.swift in Sources */,
 				394B7C11653F4EFEAF4BD92B /* WaitingMusic.swift in Sources */,
 				C6B5FC7CDD500518FDA3FA39 /* DebugUIFixtures.swift in Sources */,
 				6048AAE93A1DAC77AF35FECF /* FindyGraphics.swift in Sources */,

@@ -88,6 +88,7 @@ public actor RealtimeClient {
     private var previewVoice: String?
     private var contextWindow = RealtimeConversationWindow()
     private var contextMessageCount = AssistantLimits.contextMessageDefault
+    private var supportsImageInput = false
 
     public init() {}
 
@@ -102,6 +103,7 @@ public actor RealtimeClient {
     ) async throws {
         try Task.checkCancellation()
         guard socket == nil else { throw RealtimeClientError.sessionRejected(code: "already_connected") }
+        try AssistantAttachmentWire.validate(AssistantContext.recent(history, limit: configuration.contextMessageCount), supportsImages: configuration.supportsImageInput)
         let request = try RealtimeWire.request(configuration: configuration, apiKey: apiKey)
         let update = try voicePreview
             ? RealtimeWire.voicePreviewSessionUpdate(configuration: configuration)
@@ -121,6 +123,7 @@ public actor RealtimeClient {
         self.previewVoice = voicePreview ? configuration.realtimeVoice : nil
         self.decoder = RealtimeEventDecoder()
         self.contextMessageCount = AssistantLimits.normalizedContextMessageCount(configuration.contextMessageCount)
+        self.supportsImageInput = configuration.supportsImageInput
         socket.resume()
 
         do {
@@ -169,10 +172,14 @@ public actor RealtimeClient {
     }
 
     public func sendText(_ text: String) async throws {
+        try await sendMessage(AssistantMessage(role: .user, text: text.trimmingCharacters(in: .whitespacesAndNewlines)))
+    }
+
+    public func sendMessage(_ message: AssistantMessage) async throws {
         guard ready else { throw RealtimeClientError.notConnected }
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { throw AssistantClientError.emptyConversation }
-        try await send(RealtimeWire.message(AssistantMessage(role: .user, text: value)))
+        guard message.role == .user, message.hasContent else { throw AssistantClientError.emptyConversation }
+        try AssistantAttachmentWire.validate([message], supportsImages: supportsImageInput)
+        try await send(RealtimeWire.message(message))
         try await requestResponse()
     }
 
@@ -240,7 +247,7 @@ public actor RealtimeClient {
     private func send(_ data: Data) async throws {
         try Task.checkCancellation()
         guard let socket, connectionID != nil else { throw RealtimeClientError.notConnected }
-        guard data.count <= RealtimeWire.maximumEventBytes,
+        guard data.count <= RealtimeWire.maximumOutgoingEventBytes,
               let text = String(data: data, encoding: .utf8) else { throw RealtimeClientError.eventTooLarge }
         do {
             try await socket.send(.string(text))
@@ -348,6 +355,7 @@ private final class RealtimeRejectRedirects: NSObject, URLSessionTaskDelegate, @
 
 enum RealtimeWire {
     static let maximumEventBytes = 4 * 1_024 * 1_024
+    static let maximumOutgoingEventBytes = 10 * 1_024 * 1_024
     static let maximumTranscriptBytes = 512 * 1_024
 
     static func request(configuration: AssistantConfiguration, apiKey: String) throws -> URLRequest {
@@ -456,13 +464,17 @@ enum RealtimeWire {
 
     static func message(_ message: AssistantMessage) throws -> Data {
         guard message.text.utf8.count <= maximumTranscriptBytes else { throw RealtimeClientError.eventTooLarge }
-        return try json([
-            "type": "conversation.item.create",
-            "item": [
-                "type": "message", "role": message.role.rawValue,
-                "content": [["type": message.role == .user ? "input_text" : "output_text", "text": message.text]]
-            ]
-        ])
+        try AssistantAttachmentWire.validate([message], supportsImages: true)
+        var content: [[String: Any]] = []
+        if !message.text.isEmpty { content.append(["type": message.role == .user ? "input_text" : "output_text", "text": message.text]) }
+        for attachment in message.attachments {
+            if attachment.isImage { content.append(["type": "input_image", "image_url": AssistantAttachmentWire.dataURL(attachment)]) }
+            else { content.append(["type": "input_text", "text": AssistantAttachmentWire.text(attachment)]) }
+        }
+        let event: [String: Any] = ["type": "conversation.item.create", "item": ["type": "message", "role": message.role.rawValue, "content": content]]
+        let data = try JSONSerialization.data(withJSONObject: event, options: [.sortedKeys, .withoutEscapingSlashes])
+        guard data.count <= maximumOutgoingEventBytes else { throw RealtimeClientError.eventTooLarge }
+        return data
     }
 
     static func functionOutput(callID: String, output: String) throws -> Data {

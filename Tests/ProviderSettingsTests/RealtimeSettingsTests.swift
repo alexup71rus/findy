@@ -61,7 +61,9 @@ final class RealtimeSettingsTests: XCTestCase, @unchecked Sendable {
                     apiStyle: .responses,
                     models: ["gpt-6-luna", "gpt-6.1-sol"],
                     systemPrompt: "Keep my existing instructions.",
-                    webSearchEnabled: true
+                    webSearchEnabled: true,
+                    imageModel: "gpt-image-2",
+                    imageInputEnabled: true
                 )
                 let otherAccount = AssistantProvider(
                     name: "Other OpenAI account",
@@ -86,6 +88,9 @@ final class RealtimeSettingsTests: XCTestCase, @unchecked Sendable {
                 XCTAssertEqual(fixture.settings.configuration.webSearchModel, "gpt-6.1-sol")
                 XCTAssertEqual(realtime.systemPrompt, original.systemPrompt)
                 XCTAssertTrue(realtime.webSearchEnabled)
+                XCTAssertEqual(realtime.imageModel, "gpt-image-2")
+                XCTAssertTrue(realtime.imageInputEnabled)
+                XCTAssertTrue(fixture.settings.configuration.imageInputEnabled)
                 XCTAssertEqual(try fixture.settings.apiKey(), "selected-fixture-key")
                 XCTAssertEqual(try fixture.settings.apiKey(for: original), "selected-fixture-key")
                 XCTAssertEqual(try fixture.settings.apiKey(for: otherAccount), "unselected-fixture-key")

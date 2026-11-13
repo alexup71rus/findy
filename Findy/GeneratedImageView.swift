@@ -3,8 +3,10 @@ import UIKit
 
 struct GeneratedImageView: View {
     let messageID: UUID
+    @ObservedObject private var media = MediaStorage.shared
     @State private var showingViewer = false
     var body: some View {
+        let _ = media.revision
         if let url = GeneratedImages.url(for: messageID), let image = UIImage(contentsOfFile: url.path) {
             Button { showingViewer = true } label: {
                 Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 300, maxHeight: 300).clipShape(RoundedRectangle(cornerRadius: 14))
@@ -12,13 +14,15 @@ struct GeneratedImageView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Открыть изображение")
             .fullScreenCover(isPresented: $showingViewer) { GeneratedImageViewer(image: image, url: url) }
+        } else if GeneratedImages.wasRemoved(for: messageID) {
+            Label("Изображение удалено", systemImage: "photo.badge.minus").foregroundStyle(.secondary)
         } else if GeneratedImages.url(for: messageID) != nil {
             Label("Не удалось открыть изображение", systemImage: "photo.badge.exclamationmark").foregroundStyle(.secondary)
         }
     }
 }
 
-private struct GeneratedImageViewer: View {
+struct GeneratedImageViewer: View {
     let image: UIImage
     let url: URL
     @Environment(\.dismiss) private var dismiss
