@@ -21,6 +21,10 @@ final class RealtimeClientTests: XCTestCase {
 
     func testFarewellResponseKeepsSessionVoiceAndHasTurnMetadata() throws {
         let turn = UUID()
+        let normal = try object(RealtimeWire.voiceResponse(turn: turn))
+        let normalResponse = try XCTUnwrap(normal["response"] as? [String: Any])
+        XCTAssertEqual((normalResponse["metadata"] as? [String: String])?["findy_voice_turn"], turn.uuidString)
+        XCTAssertNil(normalResponse["instructions"])
         let root = try object(RealtimeWire.farewellResponse(phrase: "До свидания!", turn: turn))
         XCTAssertEqual(root["type"] as? String, "response.create")
         let response = try XCTUnwrap(root["response"] as? [String: Any])
@@ -31,11 +35,28 @@ final class RealtimeClientTests: XCTestCase {
         XCTAssertNil(response["model"])
         XCTAssertNil(response["output_modalities"])
         XCTAssertEqual(response["tool_choice"] as? String, "none")
+        XCTAssertEqual((response["input"] as? [Any])?.count, 0)
+        XCTAssertNil(response["conversation"])
         XCTAssertEqual((response["metadata"] as? [String: String])?["findy_farewell_turn"], turn.uuidString)
         XCTAssertTrue((response["instructions"] as? String)?.contains("До свидания!") == true)
         var decoder = RealtimeEventDecoder()
         let payload = try JSONSerialization.data(withJSONObject: ["type": "response.created", "response": ["id": "farewell-id", "metadata": ["findy_farewell_turn": turn.uuidString]]])
         XCTAssertEqual(try decoder.decode(payload), [.farewellResponseStarted(id: "farewell-id", turn: turn.uuidString)])
+        let regular = try JSONSerialization.data(withJSONObject: ["type": "response.created", "response": ["id": "voice-id", "metadata": ["findy_voice_turn": turn.uuidString]]])
+        XCTAssertEqual(try decoder.decode(regular), [.voiceResponseStarted(id: "voice-id", turn: turn.uuidString)])
+    }
+
+    func testManualVoiceResponsesAreOptInForNativeVoiceOnly() throws {
+        func vad(_ manual: Bool) throws -> [String: Any] {
+            let root = try object(RealtimeWire.sessionUpdate(configuration: config(), outputAudio: true, manualVoiceResponses: manual))
+            let session = try XCTUnwrap(root["session"] as? [String: Any])
+            let audio = try XCTUnwrap(session["audio"] as? [String: Any])
+            let input = try XCTUnwrap(audio["input"] as? [String: Any])
+            return try XCTUnwrap(input["turn_detection"] as? [String: Any])
+        }
+        XCTAssertEqual(try vad(false)["create_response"] as? Bool, true)
+        XCTAssertEqual(try vad(true)["create_response"] as? Bool, false)
+        XCTAssertEqual(try vad(true)["interrupt_response"] as? Bool, true)
     }
 
     func testWebSocketRequestPreservesPrefixAndOmitsAuthorizationWhenEmpty() throws {
@@ -69,7 +90,7 @@ final class RealtimeClientTests: XCTestCase {
     }
 
     func testVoiceSessionConfiguresNativeAudioVADAndTranscriptionSeparately() throws {
-        let root = try object(RealtimeWire.sessionUpdate(configuration: config(), outputAudio: true))
+        let root = try object(RealtimeWire.sessionUpdate(configuration: config(), outputAudio: true, manualVoiceResponses: true))
         XCTAssertEqual(root["type"] as? String, "session.update")
         let session = try XCTUnwrap(root["session"] as? [String: Any])
         XCTAssertEqual(session["type"] as? String, "realtime")
@@ -87,7 +108,7 @@ final class RealtimeClientTests: XCTestCase {
         let vad = try XCTUnwrap(input["turn_detection"] as? [String: Any])
         XCTAssertEqual(vad["type"] as? String, "server_vad")
         XCTAssertEqual(vad["silence_duration_ms"] as? Int, 650)
-        XCTAssertEqual(vad["create_response"] as? Bool, true)
+        XCTAssertEqual(vad["create_response"] as? Bool, false)
         XCTAssertEqual(vad["interrupt_response"] as? Bool, true)
         let transcription = try XCTUnwrap(input["transcription"] as? [String: Any])
         XCTAssertEqual(transcription["model"] as? String, "gpt-transcribe")
@@ -291,7 +312,7 @@ final class RealtimeClientTests: XCTestCase {
         ])
         let first = try decoder.decode(complete)
         XCTAssertEqual(first.count, 2)
-        XCTAssertEqual(first[0], .functionCall(RealtimeFunctionCall(callID: "call_1", name: "web_search", arguments: #"{"query":"новости"}"#)))
+        XCTAssertEqual(first[0], .functionCall(responseID: "r1", call: RealtimeFunctionCall(callID: "call_1", name: "web_search", arguments: #"{"query":"новости"}"#)))
         XCTAssertEqual(try decoder.decode(complete).count, 1)
     }
 
@@ -387,9 +408,9 @@ final class RealtimeClientTests: XCTestCase {
             "delta": String(repeating: "x", count: RealtimeWire.maximumTranscriptBytes + 1)
         ]))) { XCTAssertEqual($0 as? RealtimeClientError, .eventTooLarge) }
         XCTAssertTrue(try decoder.decode(event(["type": "rate_limits.updated", "rate_limits": []])).isEmpty)
-        XCTAssertTrue(try decoder.decode(event([
+        XCTAssertEqual(try decoder.decode(event([
             "type": "conversation.item.input_audio_transcription.failed", "item_id": "u1"
-        ])).isEmpty)
+        ])), [.inputTranscriptionFailed(itemID: "u1")])
     }
 }
 

@@ -144,7 +144,7 @@ private actor RealtimeTextConversation {
             if let index = outputItems.firstIndex(where: { $0.0 == itemID }) { outputItems[index].1 = text }
             else { outputItems.append((itemID, text)) }
             if tools.isEmpty { await onUpdate?(snapshot) }
-        case .functionCall(let call):
+        case .functionCall(_, let call):
             guard handledCalls.insert(call.callID).inserted else { return }
             guard remainingToolRounds > 0 else { finish(.failure(AssistantClientError.failedResponse)); return }
             remainingToolRounds -= 1

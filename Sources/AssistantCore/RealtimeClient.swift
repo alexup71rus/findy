@@ -26,10 +26,12 @@ public enum RealtimeEvent: Equatable, Sendable {
     case ready
     case speechStarted(itemID: String)
     case speechStopped(itemID: String)
+    case inputTranscriptionFailed(itemID: String)
     /// Text is cumulative for this item, including for partial events.
     case inputTranscript(itemID: String, text: String, isFinal: Bool)
     case responseStarted(id: String)
     case farewellResponseStarted(id: String, turn: String)
+    case voiceResponseStarted(id: String, turn: String)
     /// Emitted before audio/transcript deltas so an interruption can identify
     /// an assistant message even before its first audio buffer arrives.
     case outputItemStarted(responseID: String, itemID: String)
@@ -37,7 +39,7 @@ public enum RealtimeEvent: Equatable, Sendable {
     case audioDone(itemID: String, contentIndex: Int)
     /// Includes both audio transcripts and text-only model responses.
     case outputTranscript(itemID: String, text: String, isFinal: Bool)
-    case functionCall(RealtimeFunctionCall)
+    case functionCall(responseID: String, call: RealtimeFunctionCall)
     case responseDone(RealtimeResponseCompletion)
     case contextPruned(removed: Int, retainedMessages: Int)
     case failure(RealtimeClientError)
@@ -100,6 +102,7 @@ public actor RealtimeClient {
         outputAudio: Bool,
         tools: [AssistantToolDefinition] = [],
         voicePreview: Bool = false,
+        manualVoiceResponses: Bool = false,
         onEvent: @escaping EventHandler
     ) async throws {
         try Task.checkCancellation()
@@ -108,7 +111,7 @@ public actor RealtimeClient {
         let request = try RealtimeWire.request(configuration: configuration, apiKey: apiKey)
         let update = try voicePreview
             ? RealtimeWire.voicePreviewSessionUpdate(configuration: configuration)
-            : RealtimeWire.sessionUpdate(configuration: configuration, outputAudio: outputAudio, tools: tools)
+            : RealtimeWire.sessionUpdate(configuration: configuration, outputAudio: outputAudio, tools: tools, manualVoiceResponses: manualVoiceResponses)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.timeoutIntervalForRequest = 20
         sessionConfiguration.timeoutIntervalForResource = 3_600
@@ -194,6 +197,11 @@ public actor RealtimeClient {
     public func requestResponse() async throws {
         guard ready else { throw RealtimeClientError.notConnected }
         try await send(RealtimeWire.json(["type": "response.create"]))
+    }
+
+    public func requestVoiceResponse(turn: UUID) async throws {
+        guard ready else { throw RealtimeClientError.notConnected }
+        try await send(RealtimeWire.voiceResponse(turn: turn))
     }
 
     /// One short farewell using the current session voice and conversation.
@@ -311,6 +319,7 @@ public actor RealtimeClient {
                     }
                     if case .responseStarted = event { responseIsActive = true }
                     if case .farewellResponseStarted = event { responseIsActive = true }
+                    if case .voiceResponseStarted = event { responseIsActive = true }
                     if case .responseDone = event { responseIsActive = false }
                     // Awaiting the consumer supplies backpressure for received
                     // audio; there is no unbounded AsyncStream buffer.
@@ -387,13 +396,13 @@ enum RealtimeWire {
         return request
     }
 
-    static func sessionUpdate(configuration: AssistantConfiguration, outputAudio: Bool, tools: [AssistantToolDefinition] = []) throws -> Data {
+    static func sessionUpdate(configuration: AssistantConfiguration, outputAudio: Bool, tools: [AssistantToolDefinition] = [], manualVoiceResponses: Bool = false) throws -> Data {
         var input: [String: Any] = [
             "format": ["type": "audio/pcm", "rate": 24_000],
             "turn_detection": outputAudio ? [
                 "type": "server_vad",
                 "prefix_padding_ms": 300, "silence_duration_ms": 650,
-                "create_response": true, "interrupt_response": true
+                "create_response": !manualVoiceResponses, "interrupt_response": true
             ] as [String: Any] : NSNull()
         ]
         if outputAudio {
@@ -454,6 +463,10 @@ enum RealtimeWire {
         ]])
     }
 
+    static func voiceResponse(turn: UUID) throws -> Data {
+        try json(["type": "response.create", "response": ["metadata": ["findy_voice_turn": turn.uuidString]]])
+    }
+
     static func cancelResponse(id: String) throws -> Data {
         guard !id.isEmpty, id.count <= 512 else { throw RealtimeClientError.invalidEvent }
         return try json(["type": "response.cancel", "response_id": id])
@@ -463,7 +476,7 @@ enum RealtimeWire {
         guard !phrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, phrase.count <= 100 else { throw RealtimeClientError.invalidEvent }
         return try json(["type": "response.create", "response": [
             "instructions": "Произнеси только эту короткую фразу и ничего больше: \(phrase)",
-            "tool_choice": "none", "tools": [], "metadata": ["findy_farewell_turn": turn.uuidString]
+            "tool_choice": "none", "tools": [], "input": [], "metadata": ["findy_farewell_turn": turn.uuidString]
         ]])
     }
 
@@ -589,14 +602,14 @@ struct RealtimeEventDecoder {
         case "conversation.item.input_audio_transcription.completed":
             return [try transcript(event, itemID: itemID, input: true, final: true)]
         case "conversation.item.input_audio_transcription.failed":
-            // Display transcription failure does not invalidate native audio.
-            return []
+            return [.inputTranscriptionFailed(itemID: try required(itemID))]
         case "response.created":
             guard let response = event["response"] as? [String: Any], let id = response["id"] as? String else {
                 throw RealtimeClientError.invalidEvent
             }
-            if let metadata = response["metadata"] as? [String: String], let turn = metadata["findy_farewell_turn"] {
-                return [.farewellResponseStarted(id: id, turn: turn)]
+            if let metadata = response["metadata"] as? [String: String] {
+                if let turn = metadata["findy_farewell_turn"] { return [.farewellResponseStarted(id: id, turn: turn)] }
+                if let turn = metadata["findy_voice_turn"] { return [.voiceResponseStarted(id: id, turn: turn)] }
             }
             return [.responseStarted(id: id)]
         case "response.output_item.added":
@@ -672,7 +685,7 @@ struct RealtimeEventDecoder {
                       let arguments = item["arguments"] as? String else { throw RealtimeClientError.invalidEvent }
                 guard arguments.utf8.count <= 64 * 1_024 else { throw RealtimeClientError.eventTooLarge }
                 if seenCalls.insert(callID).inserted {
-                    events.append(.functionCall(RealtimeFunctionCall(callID: callID, name: name, arguments: arguments)))
+                    events.append(.functionCall(responseID: try required(response["id"] as? String ?? ""), call: RealtimeFunctionCall(callID: callID, name: name, arguments: arguments)))
                 }
             }
         }

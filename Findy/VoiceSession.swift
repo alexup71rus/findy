@@ -58,8 +58,7 @@ final class VoiceSession: NSObject, ObservableObject {
     enum Phase { case idle, starting, listening, thinking, speaking, stopping }
     @Published private(set) var phase: Phase = .idle {
         didSet {
-            if phase == .thinking { beginVoiceWaitingMusic() }
-            else { WaitingMusicPlayer.shared.stop() }
+            if phase != .thinking { WaitingMusicPlayer.shared.stop() }
         }
     }
     private var sessionID: UUID?
@@ -201,7 +200,6 @@ final class VoiceSession: NSObject, ObservableObject {
                 try Task.checkCancellation()
                 guard self.textRequestID == identifier else { return }
                 try self.prepareAssistantConnection()
-                WaitingMusicPlayer.shared.beginWaiting(voiceSession: false)
                 self.status = "Думаю…"
                 self.log.record("text.message.accepted", "characters=\(text.count)")
                 let reply = try await self.makeAssistantReply { [weak self] snapshot in
@@ -804,7 +802,7 @@ final class VoiceSession: NSObject, ObservableObject {
                 self.streamingReply = nil
                 let shouldEnd = self.pendingVoiceEndSession == identifier
                 self.pendingVoiceEndSession = nil
-                let finalText = shouldEnd && !VoiceConversationEnd.containsFarewell(reply.text) ? reply.text + " До свидания!" : reply.text
+                let finalText = shouldEnd ? VoiceConversationEnd.farewell(for: text) : reply.text
                 try self.persistMessage(AssistantMessage(id: replyID, role: .assistant, text: ConversationRules.displayText(from: finalText), sources: reply.sources))
                 self.speak(finalText, sourceURLs: reply.sources.map(\.url), finishReason: shouldEnd ? "Разговор завершён" : nil)
             } catch is CancellationError {
@@ -823,7 +821,7 @@ final class VoiceSession: NSObject, ObservableObject {
 
     private func presentStreamingReply(_ reply: AssistantReply, id: UUID, textRequest: UUID? = nil, voiceSession: UUID? = nil) {
         if let textRequest, textRequestID != textRequest { return }
-        if let voiceSession, sessionID != voiceSession || !isRunning { return }
+        if let voiceSession, sessionID != voiceSession || !isRunning || pendingVoiceEndSession == voiceSession { return }
         guard !reply.text.isEmpty else { return }
         if textRequest != nil { WaitingMusicPlayer.shared.stop() }
         streamingReply = AssistantMessage(id: id, role: .assistant, text: ConversationRules.displayText(from: reply.text), sources: reply.sources)

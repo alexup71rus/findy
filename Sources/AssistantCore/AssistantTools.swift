@@ -197,7 +197,7 @@ public enum VoiceConversationEnd {
     )
     public static func isStandaloneFarewell(_ request: String) -> Bool {
         let text = request.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return text.range(of: #"^(?:пока|до свидания|спокойной ночи|прощай|всего доброго|до встречи|goodbye|bye|good night)[.!…\s]*$"#, options: .regularExpression) != nil
+        return text.range(of: #"^(?:пока|до свидания|спокойной ночи|прощай|всего доброго|до встречи|выключись|goodbye|bye|good night)[.!…\s]*$"#, options: .regularExpression) != nil
     }
     public static func farewell(for request: String) -> String {
         request.lowercased().contains("ночи") || request.lowercased().contains("night") ? "Спокойной ночи!" : "До свидания!"
@@ -218,10 +218,10 @@ public enum VoiceConversationEnd {
         guard request.rangeOfCharacter(from: CharacterSet(charactersIn: "?？«»\"“”‘’`")) == nil else { return false }
         if isStandaloneFarewell(request) { return true }
         guard request.range(of: #"^(?:спасибо|благодарю|thanks|thank you)[.!…\s]*$"#, options: .regularExpression) == nil,
-              request.range(of: #"(?:^|\s)(?:пока\s+не|не\s+(?:завершай|выключай|отключай|заканчивай)|не\s+надо\s+(?:завершать|отключать)|не\s+прощайся|переведи|перевод|цитат|произнеси|скажи\s+слово|don't\s+(?:stop|end|disconnect)|do not\s+(?:stop|end|disconnect)|translate|quote)"#, options: .regularExpression) == nil,
+              request.range(of: #"(?:^|\s)(?:пока\s+не|не\s+(?:(?:надо|нужно)\s+)?(?:завершай|завершать|выключай(?:ся)?|выключать(?:ся)?|отключай(?:ся)?|отключать(?:ся)?|заканчивай|заканчивать)|не\s+прощайся|переведи|перевод|цитат|произнеси|скажи\s+слово|don't\s+(?:stop|end|disconnect)|do not\s+(?:stop|end|disconnect)|translate|quote)"#, options: .regularExpression) == nil,
               request.range(of: #"(?:^|[,;.!…]\s*)(?:кто|что|где|когда|как|почему|зачем|сколько|какой|какая|можешь|расскажи|объясни|подскажи|напомни|who|what|where|when|why|how|can you|tell me)(?:\s|$)"#, options: .regularExpression) == nil,
               request.range(of: #"(?:^|[\s,])(?:напомни|расскажи|объясни|подскажи|покажи|вопрос|перевести|перевод|сказал|сказала|сказали|said|question|remind|explain)(?:[\s,.!…]|$)"#, options: .regularExpression) == nil else { return false }
-        return true
+        return request.range(of: #"(?:на сегодня\s+(?:всё|все)|(?:это|на этом)\s+(?:всё|все)|мне\s+пора|я\s+(?:пойду|иду)\s+(?:спать|отдыхать)|(?:давай|пора)\s+(?:закончим|заканчивать|завершим|завершать)|(?:закончи|заверши|закончить|завершить)\s+(?:разговор|беседу|сеанс)|(?:отключись|выключись|прощай|до завтра|до встречи)|(?:that's all|i(?:'| a)m done|i have to go|end (?:the )?(?:conversation|session)|goodbye))"#, options: .regularExpression) != nil
     }
 }
 
@@ -242,5 +242,33 @@ public struct VoiceEndState: Sendable {
     }
     public func shouldEnd(isPlaying: Bool, userSpeaking: Bool, responseActive: Bool) -> Bool {
         pending && finishedResponse && !isPlaying && !userSpeaking && !responseActive
+    }
+}
+
+/// Native Realtime VAD detects turns; the app starts exactly one response only
+/// after both speech end and the final transcript for the same item arrive.
+public struct VoiceResponseGate: Sendable {
+    public enum Decision: Equatable, Sendable { case respond, farewell(String) }
+    private var itemID: String?
+    private var stopped = false
+    private var finalText: String?
+    private var requested = false
+    public init() {}
+    public mutating func begin(itemID: String) { self.itemID = itemID; stopped = false; finalText = nil; requested = false }
+    public func isCurrent(itemID: String) -> Bool { self.itemID == itemID }
+    public mutating func speechStopped(itemID: String) -> Decision? {
+        guard self.itemID == itemID else { return nil }
+        stopped = true
+        return decision()
+    }
+    public mutating func transcript(itemID: String, text: String) -> Decision? {
+        guard self.itemID == itemID else { return nil }
+        finalText = text
+        return decision()
+    }
+    private mutating func decision() -> Decision? {
+        guard stopped, let text = finalText, !requested else { return nil }
+        requested = true
+        return VoiceConversationEnd.isStandaloneFarewell(text) ? .farewell(text) : .respond
     }
 }
